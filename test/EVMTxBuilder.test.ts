@@ -54,42 +54,37 @@ describe("EVMTxBuilder Comparison with Viem", function () {
         }
       );
 
-      const chainId = 31337;
       const nonce = await publicClient.getTransactionCount({
         address: testAccount.address,
       });
-      const recipient = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
-      const value = "1000000000000000";
-      const input = "0x";
-      const gasLimit = "21000";
-      const maxFeePerGas = "20000000000";
-      const maxPriorityFeePerGas = "1000000000";
 
-      const viemTx: TransactionSerializable = {
-        chainId,
-        to: recipient,
-        value: BigInt(value),
+      const baseTx = {
+        chainId: 31337,
+        to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        value: BigInt("1000000000000000"),
         nonce,
-        gas: BigInt(gasLimit),
-        maxFeePerGas: BigInt(maxFeePerGas),
-        maxPriorityFeePerGas: BigInt(maxPriorityFeePerGas),
-        data: input,
+        gas: BigInt("21000"),
+        maxFeePerGas: BigInt("20000000000"),
+        maxPriorityFeePerGas: BigInt("1000000000"),
+        data: "0x",
         type: "eip1559",
       };
 
       const serializedEVMTx = await helperContract.read.createTransaction([
-        chainId.toString(),
-        nonce.toString(),
-        recipient,
+        baseTx.chainId.toString(),
+        baseTx.nonce.toString(),
+        baseTx.to,
         true,
-        value,
-        input,
-        gasLimit,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
+        baseTx.value.toString(),
+        baseTx.data,
+        baseTx.gas.toString(),
+        baseTx.maxFeePerGas.toString(),
+        baseTx.maxPriorityFeePerGas.toString(),
       ]);
 
-      const serializedViemTx = serializeTransaction(viemTx);
+      const serializedViemTx = serializeTransaction(
+        baseTx as TransactionSerializable
+      );
 
       expect(serializedEVMTx).to.equal(serializedViemTx);
 
@@ -125,15 +120,15 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       );
 
       const signedEVMTx = (await helperContract.read.createSignedTransaction([
-        chainId.toString(),
-        nonce.toString(),
-        recipient,
+        baseTx.chainId.toString(),
+        baseTx.nonce.toString(),
+        baseTx.to,
         true,
-        value,
-        input,
-        gasLimit,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
+        baseTx.value.toString(),
+        baseTx.data,
+        baseTx.gas.toString(),
+        baseTx.maxFeePerGas.toString(),
+        baseTx.maxPriorityFeePerGas.toString(),
         yParity,
         r,
         s,
