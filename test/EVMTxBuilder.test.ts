@@ -3,14 +3,12 @@ import hre from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import {
   createPublicClient,
-  createWalletClient,
   http,
   hexToBytes,
   keccak256,
   serializeTransaction,
   TransactionSerializable,
   Hex,
-  recoverAddress,
 } from "viem";
 import { hardhat } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
@@ -19,15 +17,9 @@ import { secp256k1 } from "@noble/curves/secp256k1";
 describe("EVMTxBuilder Comparison with Viem", function () {
   const TEST_PRIVATE_KEY =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-  const testAccount = privateKeyToAccount(TEST_PRIVATE_KEY);
+  const testAccount = privateKeyToAccount(TEST_PRIVATE_KEY as `0x${string}`);
 
   const publicClient = createPublicClient({
-    chain: hardhat,
-    transport: http(),
-  });
-
-  const walletClient = createWalletClient({
-    account: testAccount,
     chain: hardhat,
     transport: http(),
   });
@@ -59,6 +51,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       const nonce = await publicClient.getTransactionCount({
         address: testAccount.address,
       });
+
       const recipient = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
       const value = 1000000000000000n;
       const input = "0x" as Hex;

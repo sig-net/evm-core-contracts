@@ -5,8 +5,7 @@ import "../EVMTxBuilder/EVMTxBuilder.sol";
 
 /**
  * @title TestEVMTxBuilder
- * @dev A modernized helper contract for testing the EVMTxBuilder library
- * @notice This contract provides a clean interface for building and testing EVM transactions
+ * @dev A minimal helper contract for testing the EVMTxBuilder library
  */
 contract TestEVMTxBuilder {
     using EVMTxBuilder for *;
@@ -86,9 +85,7 @@ contract TestEVMTxBuilder {
         
         tx.chainId = txParams.chainId;
         tx.nonce = txParams.nonce;
-        if (txParams.hasTo) {
-            tx.to = _addressToEVMTxAddress(txParams.to);
-        }
+        tx.to = txParams.to;
         tx.hasTo = txParams.hasTo;
         tx.value = txParams.value;
         tx.input = txParams.input;
@@ -97,12 +94,5 @@ contract TestEVMTxBuilder {
         tx.maxPriorityFeePerGas = txParams.maxPriorityFeePerGas;
         
         return tx;
-    }
-
-    /**
-     * @dev Converts an address to EVMTxBuilder.Address
-     */
-    function _addressToEVMTxAddress(address addr) internal pure returns (EVMTxBuilder.Address memory) {
-        return EVMTxBuilder.Address(bytes20(addr));
     }
 } 
