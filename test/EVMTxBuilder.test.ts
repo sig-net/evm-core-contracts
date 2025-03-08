@@ -3,7 +3,9 @@ import hre from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import {
   createPublicClient,
+  createWalletClient,
   http,
+  hexToBytes,
   keccak256,
   serializeTransaction,
   TransactionSerializable,
@@ -13,7 +15,6 @@ import {
 import { hardhat } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { secp256k1 } from "@noble/curves/secp256k1";
-import { hexToBytes } from "viem";
 
 describe("EVMTxBuilder Comparison with Viem", function () {
   const TEST_PRIVATE_KEY =
@@ -25,78 +26,84 @@ describe("EVMTxBuilder Comparison with Viem", function () {
     transport: http(),
   });
 
-  beforeEach(async () => {
-    await publicClient.request({
-      method: "hardhat_setBalance" as any,
-      params: [testAccount.address, "0x56BC75E2D63100000"],
-    });
+  const walletClient = createWalletClient({
+    account: testAccount,
+    chain: hardhat,
+    transport: http(),
   });
 
   async function deployLibraryFixture() {
     const evmTxBuilder = await hre.viem.deployContract(
       "contracts/EVMTxBuilder/EVMTxBuilder.sol:EVMTxBuilder"
     );
-    return { evmTxBuilder };
+
+    const helperContract = await hre.viem.deployContract(
+      "./contracts/test/TestEVMTxBuilder.sol:TestEVMTxBuilder",
+      [],
+      {
+        libraries: {
+          "contracts/EVMTxBuilder/EVMTxBuilder.sol:EVMTxBuilder":
+            evmTxBuilder.address,
+        },
+      }
+    );
+
+    return { evmTxBuilder, helperContract };
   }
 
   describe("Direct Library Usage", function () {
     it("Should compare transaction building between EVMTxBuilder and viem", async function () {
-      const { evmTxBuilder } = await loadFixture(deployLibraryFixture);
+      const { helperContract } = await loadFixture(deployLibraryFixture);
 
-      const helperContract = await hre.viem.deployContract(
-        "./contracts/test/TestEVMTxBuilder.sol:TestEVMTxBuilder",
-        [],
-        {
-          libraries: {
-            "contracts/EVMTxBuilder/EVMTxBuilder.sol:EVMTxBuilder":
-              evmTxBuilder.address,
-          },
-        }
-      );
-
+      const chainId = 31337n;
       const nonce = await publicClient.getTransactionCount({
         address: testAccount.address,
       });
+      const recipient = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+      const value = 1000000000000000n;
+      const input = "0x" as Hex;
+      const gasLimit = 21000n;
+      const maxFeePerGas = 20000000000n;
+      const maxPriorityFeePerGas = 1000000000n;
 
-      const baseTx = {
-        chainId: 31337,
-        to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        value: BigInt("1000000000000000"),
+      const viemTx: TransactionSerializable = {
+        chainId: Number(chainId),
+        to: recipient,
+        value: value,
         nonce,
-        gas: BigInt("21000"),
-        maxFeePerGas: BigInt("20000000000"),
-        maxPriorityFeePerGas: BigInt("1000000000"),
-        data: "0x",
+        gas: gasLimit,
+        maxFeePerGas: maxFeePerGas,
+        maxPriorityFeePerGas: maxPriorityFeePerGas,
+        data: input,
         type: "eip1559",
       };
 
-      const serializedEVMTx = await helperContract.read.createTransaction([
-        baseTx.chainId.toString(),
-        baseTx.nonce.toString(),
-        baseTx.to,
-        true,
-        baseTx.value.toString(),
-        baseTx.data,
-        baseTx.gas.toString(),
-        baseTx.maxFeePerGas.toString(),
-        baseTx.maxPriorityFeePerGas.toString(),
-      ]);
+      const txParams = {
+        chainId: Number(chainId),
+        nonce: Number(nonce),
+        to: recipient as `0x${string}`,
+        hasTo: true,
+        value: value,
+        input: input,
+        gasLimit: gasLimit,
+        maxFeePerGas: maxFeePerGas,
+        maxPriorityFeePerGas: maxPriorityFeePerGas,
+      };
 
-      const serializedViemTx = serializeTransaction(
-        baseTx as TransactionSerializable
-      );
+      const serializedViemTx = serializeTransaction(viemTx);
+      const serializedEVMTx =
+        await helperContract.read.createUnsignedTransaction([txParams]);
 
       expect(serializedEVMTx).to.equal(serializedViemTx);
 
+      const viemTxHash = keccak256(serializedViemTx);
       const evmTxHash = (await helperContract.read.getHashToSign([
         serializedEVMTx,
-      ])) as Hex;
-
-      const viemTxHash = keccak256(serializedViemTx);
+      ])) as `0x${string}`;
 
       expect(evmTxHash).to.equal(viemTxHash);
 
-      const privateKeyBytes = hexToBytes(TEST_PRIVATE_KEY);
+      const privateKeyBytes = hexToBytes(TEST_PRIVATE_KEY as `0x${string}`);
       const messageHashBytes = hexToBytes(evmTxHash);
 
       const signature = secp256k1.sign(messageHashBytes, privateKeyBytes);
@@ -104,34 +111,16 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       const r = `0x${signature.r.toString(16).padStart(64, "0")}` as Hex;
       const s = `0x${signature.s.toString(16).padStart(64, "0")}` as Hex;
       const v = signature.recovery;
-      const yParity = v === 0 ? "0" : "1";
 
-      const recoveredAddress = await recoverAddress({
-        hash: evmTxHash,
-        signature: {
-          r,
-          s,
-          v: BigInt(v),
-        },
-      });
-
-      expect(recoveredAddress.toLowerCase()).to.equal(
-        testAccount.address.toLowerCase()
-      );
-
-      const signedEVMTx = (await helperContract.read.createSignedTransaction([
-        baseTx.chainId.toString(),
-        baseTx.nonce.toString(),
-        baseTx.to,
-        true,
-        baseTx.value.toString(),
-        baseTx.data,
-        baseTx.gas.toString(),
-        baseTx.maxFeePerGas.toString(),
-        baseTx.maxPriorityFeePerGas.toString(),
-        yParity,
+      const evmSignature = {
+        v,
         r,
         s,
+      };
+
+      const signedEVMTx = (await helperContract.read.createSignedTransaction([
+        txParams,
+        evmSignature,
       ])) as Hex;
 
       const txHash = await publicClient.sendRawTransaction({
