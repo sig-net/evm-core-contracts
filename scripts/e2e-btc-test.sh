@@ -74,7 +74,7 @@ run_tests() {
   log "${YELLOW}Starting Bitcoin integration tests...${NC}"
   
   # Run the tests and capture the exit code
-  pnpm hardhat test test/BTCTxBuilder.integration.test.ts
+  pnpm hardhat test test/BTCTxBuilder.test.ts
   TEST_RESULT=$?
   
   if [ $TEST_RESULT -eq 0 ]; then
