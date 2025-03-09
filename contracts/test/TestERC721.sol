@@ -16,26 +16,7 @@ contract TestERC721 is ERC721, Ownable {
      * @param to The address to mint the token to
      * @param tokenId The token ID to mint
      */
-    function mint(address to, uint256 tokenId) public onlyOwner {
+    function mint(address to, uint256 tokenId) public {
         _safeMint(to, tokenId);
-    }
-    
-    /**
-     * @dev Override ownerOf to ensure it's explicitly marked as public
-     * @param tokenId The token ID to query
-     * @return The address of the owner of the token
-     */
-    function ownerOf(uint256 tokenId) public view override returns (address) {
-        return super.ownerOf(tokenId);
-    }
-    
-    /**
-     * @dev Override transferFrom to ensure it's explicitly marked as public
-     * @param from The current owner of the token
-     * @param to The address to receive the token
-     * @param tokenId The token ID being transferred
-     */
-    function transferFrom(address from, address to, uint256 tokenId) public override {
-        super.transferFrom(from, to, tokenId);
     }
 } 

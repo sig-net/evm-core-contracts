@@ -17,7 +17,7 @@ contract TestERC20 is ERC20, Ownable {
      * @param amount The amount of tokens to mint
      * @return True if the operation was successful
      */
-    function mint(address to, uint256 amount) public onlyOwner returns (bool) {
+    function mint(address to, uint256 amount) public returns (bool) {
         _mint(to, amount);
         return true;
     }
