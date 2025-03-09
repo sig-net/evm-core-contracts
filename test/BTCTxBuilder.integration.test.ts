@@ -329,6 +329,26 @@ describe("BTCTxBuilder Integration Tests", function () {
     return await callBitcoinRPC("sendrawtransaction", [txHex]);
   }
 
+  // Verify transaction is in mempool or block
+  async function verifyTransaction(txid: string): Promise<boolean> {
+    try {
+      // First check if it's in the mempool
+      const mempoolInfo = await callBitcoinRPC("getmempoolentry", [txid]);
+      console.log("Transaction is in mempool:", mempoolInfo);
+      return true;
+    } catch (error) {
+      // If not in mempool, try to get the transaction (might be in a block already)
+      try {
+        const txInfo = await callBitcoinRPC("gettransaction", [txid]);
+        console.log("Transaction found in blockchain:", txInfo);
+        return true;
+      } catch (getError) {
+        console.error("Transaction not found:", getError);
+        return false;
+      }
+    }
+  }
+
   // Simple unit test that doesn't rely on the container
   describe("Unit Tests", function () {
     it("should format transaction data correctly", async function () {
@@ -568,26 +588,36 @@ describe("BTCTxBuilder Integration Tests", function () {
         ]);
         console.log("Transaction hash to sign:", hashToSign);
 
-        // Skip actual signing and broadcasting due to fee issues
-        console.log("Transaction structure verified successfully!");
+        // Actually sign and broadcast the transaction
+        console.log("Proceeding with signing and broadcasting...");
+
+        // Step 4: Sign the transaction using the Bitcoin node
+        const signedTxHex = await signRawTransaction(unsignedTx);
+        console.log("Signed transaction:", signedTxHex);
+
+        // Step 5: Broadcast the signed transaction
+        const txid = await sendRawTransaction(signedTxHex);
+        console.log("Transaction successfully broadcast! TXID:", txid);
+
+        // Step 6: Verify the transaction was accepted
+        const isVerified = await verifyTransaction(txid);
+        expect(isVerified).to.be.true;
+
+        // Generate a block to confirm the transaction
+        console.log("Generating a block to confirm the transaction...");
+        await callBitcoinRPC("generatetoaddress", [1, senderAddress]);
+
+        // Verify the transaction again after block generation
+        const confirmedTx = await callBitcoinRPC("gettransaction", [txid]);
         console.log(
-          "Skipping actual signing and broadcasting to avoid fee issues."
+          "Confirmed transaction:",
+          JSON.stringify(confirmedTx, null, 2).substring(0, 300) + "..."
         );
+        expect(confirmedTx.confirmations).to.be.at.least(1);
 
-        // Instead of broadcasting, we'll just verify the transaction structure
-        expect(decodedTx).to.have.property("txid");
-        expect(decodedTx.version).to.equal(txParams.version);
-        expect(decodedTx.locktime).to.equal(txParams.locktime);
-        expect(decodedTx.vin.length).to.equal(txParams.inputs.length);
-        expect(decodedTx.vout.length).to.equal(txParams.outputs.length);
-
-        // Verify the output amounts
-        const recipientOutput = decodedTx.vout.find(
-          (v: any) => v.scriptPubKey.hex === recipientScriptPubKey.substring(2)
+        console.log(
+          "Full transaction broadcasting and confirmation successful!"
         );
-        expect(recipientOutput).to.not.be.undefined;
-
-        console.log("Full transaction verification completed successfully!");
       } catch (error) {
         console.error("Test failed:", error);
         throw error;
