@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
 /**
@@ -37,12 +36,14 @@ library EVMTxBuilder {
      * @param tx The transaction to build
      * @return The RLP encoded transaction data
      */
-    function buildForSigning(EVMTransaction memory tx) public pure returns (bytes memory) {
+    function buildForSigning(
+        EVMTransaction memory tx
+    ) public pure returns (bytes memory) {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
-        
+
         bytes memory encodedFields = encodeFields(tx);
-        
+
         return bytes.concat(result, encodedFields);
     }
 
@@ -52,12 +53,18 @@ library EVMTxBuilder {
      * @param signature The signature to include
      * @return The RLP encoded transaction data with signature
      */
-    function buildWithSignature(EVMTransaction memory tx, Signature memory signature) public pure returns (bytes memory) {
+    function buildWithSignature(
+        EVMTransaction memory tx,
+        Signature memory signature
+    ) public pure returns (bytes memory) {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
-        
-        bytes memory encodedFieldsWithSignature = encodeFieldsWithSignature(tx, signature);
-        
+
+        bytes memory encodedFieldsWithSignature = encodeFieldsWithSignature(
+            tx,
+            signature
+        );
+
         return bytes.concat(result, encodedFieldsWithSignature);
     }
 
@@ -66,26 +73,27 @@ library EVMTxBuilder {
      * @param tx The transaction to encode
      * @return The RLP encoded transaction fields
      */
-    function encodeFields(EVMTransaction memory tx) internal pure returns (bytes memory) {
+    function encodeFields(
+        EVMTransaction memory tx
+    ) internal pure returns (bytes memory) {
         bytes[] memory elements = new bytes[](9);
-        
+
         elements[0] = rlpEncodeUint(tx.chainId);
         elements[1] = rlpEncodeUint(tx.nonce);
         elements[2] = rlpEncodeUint(tx.maxPriorityFeePerGas);
         elements[3] = rlpEncodeUint(tx.maxFeePerGas);
         elements[4] = rlpEncodeUint(tx.gasLimit);
-        
-        // Handle 'to' address
+
         if (tx.hasTo) {
             elements[5] = rlpEncodeAddress(tx.to);
         } else {
             elements[5] = rlpEncodeEmptyBytes();
         }
-        
+
         elements[6] = rlpEncodeUint(tx.value);
         elements[7] = rlpEncodeBytes(tx.input);
         elements[8] = rlpEncodeAccessList(tx.accessList);
-        
+
         return rlpEncodeList(elements);
     }
 
@@ -95,33 +103,33 @@ library EVMTxBuilder {
      * @param signature The signature to include
      * @return The RLP encoded transaction fields with signature
      */
-    function encodeFieldsWithSignature(EVMTransaction memory tx, Signature memory signature) internal pure returns (bytes memory) {
+    function encodeFieldsWithSignature(
+        EVMTransaction memory tx,
+        Signature memory signature
+    ) internal pure returns (bytes memory) {
         bytes[] memory elements = new bytes[](12);
-        
+
         elements[0] = rlpEncodeUint(tx.chainId);
         elements[1] = rlpEncodeUint(tx.nonce);
         elements[2] = rlpEncodeUint(tx.maxPriorityFeePerGas);
         elements[3] = rlpEncodeUint(tx.maxFeePerGas);
         elements[4] = rlpEncodeUint(tx.gasLimit);
-        
-        // Handle 'to' address
+
         if (tx.hasTo) {
             elements[5] = rlpEncodeAddress(tx.to);
         } else {
             elements[5] = rlpEncodeEmptyBytes();
         }
-        
+
         elements[6] = rlpEncodeUint(tx.value);
         elements[7] = rlpEncodeBytes(tx.input);
         elements[8] = rlpEncodeAccessList(tx.accessList);
         elements[9] = rlpEncodeUint(signature.v);
         elements[10] = rlpEncodeBytes32(signature.r);
         elements[11] = rlpEncodeBytes32(signature.s);
-        
+
         return rlpEncodeList(elements);
     }
-
-    // ================ RLP ENCODING FUNCTIONS ================
 
     /**
      * @dev Encodes a uint value for RLP
@@ -148,23 +156,17 @@ library EVMTxBuilder {
      * @param addr The address to encode
      * @return The RLP encoded address
      */
-    function rlpEncodeAddress(address addr) internal pure returns (bytes memory) {
-        // For Ethereum addresses, we need to encode them as a 20-byte value
-        // without any padding or truncation
-        
-        // First, create a buffer for the address bytes (20 bytes)
+    function rlpEncodeAddress(
+        address addr
+    ) internal pure returns (bytes memory) {
         bytes memory addrBytes = new bytes(20);
-        
-        // Convert the address to bytes
-        // We need to be careful with endianness and ensure we get the exact 20 bytes
+
         uint160 addrValue = uint160(addr);
-        
-        // Fill the buffer with the address bytes in big-endian order
+
         for (uint i = 0; i < 20; i++) {
             addrBytes[i] = bytes1(uint8(addrValue >> (8 * (19 - i))));
         }
-        
-        // Use the standard RLP encoding for bytes
+
         return rlpEncodeBytes(addrBytes);
     }
 
@@ -173,7 +175,9 @@ library EVMTxBuilder {
      * @param value The bytes to encode
      * @return The RLP encoded bytes
      */
-    function rlpEncodeBytes(bytes memory value) internal pure returns (bytes memory) {
+    function rlpEncodeBytes(
+        bytes memory value
+    ) internal pure returns (bytes memory) {
         if (value.length == 1 && uint8(value[0]) < 128) {
             return value;
         } else if (value.length < 56) {
@@ -185,7 +189,9 @@ library EVMTxBuilder {
             return result;
         } else {
             bytes memory lengthBytes = uintToBytes(value.length);
-            bytes memory result = new bytes(value.length + lengthBytes.length + 1);
+            bytes memory result = new bytes(
+                value.length + lengthBytes.length + 1
+            );
             result[0] = bytes1(uint8(183 + lengthBytes.length));
             for (uint i = 0; i < lengthBytes.length; i++) {
                 result[i + 1] = lengthBytes[i];
@@ -202,7 +208,9 @@ library EVMTxBuilder {
      * @param value The bytes32 to encode
      * @return The RLP encoded bytes32
      */
-    function rlpEncodeBytes32(bytes32 value) internal pure returns (bytes memory) {
+    function rlpEncodeBytes32(
+        bytes32 value
+    ) internal pure returns (bytes memory) {
         bytes memory valueBytes = new bytes(32);
         assembly {
             mstore(add(valueBytes, 32), value)
@@ -225,12 +233,14 @@ library EVMTxBuilder {
      * @param elements The list elements to encode
      * @return The RLP encoded list
      */
-    function rlpEncodeList(bytes[] memory elements) internal pure returns (bytes memory) {
+    function rlpEncodeList(
+        bytes[] memory elements
+    ) internal pure returns (bytes memory) {
         uint totalLength = 0;
         for (uint i = 0; i < elements.length; i++) {
             totalLength += elements[i].length;
         }
-        
+
         if (totalLength < 56) {
             bytes memory result = new bytes(totalLength + 1);
             result[0] = bytes1(uint8(192 + totalLength));
@@ -244,7 +254,9 @@ library EVMTxBuilder {
             return result;
         } else {
             bytes memory lengthBytes = uintToBytes(totalLength);
-            bytes memory result = new bytes(totalLength + lengthBytes.length + 1);
+            bytes memory result = new bytes(
+                totalLength + lengthBytes.length + 1
+            );
             result[0] = bytes1(uint8(247 + lengthBytes.length));
             for (uint i = 0; i < lengthBytes.length; i++) {
                 result[i + 1] = lengthBytes[i];
@@ -265,22 +277,28 @@ library EVMTxBuilder {
      * @param accessList The access list to encode
      * @return The RLP encoded access list
      */
-    function rlpEncodeAccessList(AccessListEntry[] memory accessList) internal pure returns (bytes memory) {
+    function rlpEncodeAccessList(
+        AccessListEntry[] memory accessList
+    ) internal pure returns (bytes memory) {
         bytes[] memory elements = new bytes[](accessList.length);
-        
+
         for (uint i = 0; i < accessList.length; i++) {
             bytes[] memory entryElements = new bytes[](2);
             entryElements[0] = rlpEncodeAddress(accessList[i].addr);
-            
-            bytes[] memory storageKeyElements = new bytes[](accessList[i].storageKeys.length);
+
+            bytes[] memory storageKeyElements = new bytes[](
+                accessList[i].storageKeys.length
+            );
             for (uint j = 0; j < accessList[i].storageKeys.length; j++) {
-                storageKeyElements[j] = rlpEncodeBytes32(accessList[i].storageKeys[j]);
+                storageKeyElements[j] = rlpEncodeBytes32(
+                    accessList[i].storageKeys[j]
+                );
             }
             entryElements[1] = rlpEncodeList(storageKeyElements);
-            
+
             elements[i] = rlpEncodeList(entryElements);
         }
-        
+
         return rlpEncodeList(elements);
     }
 
@@ -293,21 +311,21 @@ library EVMTxBuilder {
         if (value == 0) {
             return new bytes(0);
         }
-        
+
         uint tempValue = value;
         uint length = 0;
         while (tempValue > 0) {
             length++;
             tempValue >>= 8;
         }
-        
+
         bytes memory result = new bytes(length);
         tempValue = value;
         for (uint i = 0; i < length; i++) {
             result[length - i - 1] = bytes1(uint8(tempValue & 0xFF));
             tempValue >>= 8;
         }
-        
+
         return result;
     }
 }
