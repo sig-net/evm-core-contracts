@@ -6,10 +6,8 @@ pragma solidity ^0.8.28;
  * @dev Minimal library for building EIP-1559 EVM transactions
  */
 library EVMTxBuilder {
-    // Constants
     uint8 constant EIP_1559_TYPE = 2;
 
-    // Structs
     struct AccessListEntry {
         address addr;
         bytes32[] storageKeys;
