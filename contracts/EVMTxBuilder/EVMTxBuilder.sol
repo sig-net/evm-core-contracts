@@ -132,6 +132,15 @@ library EVMTxBuilder {
     }
 
     /**
+     * @dev Get the hash of a transaction for signing
+     * @param txBytes The RLP encoded transaction
+     * @return The keccak256 hash that should be signed
+     */
+    function getHashToSign(bytes memory txBytes) public pure returns (bytes32) {
+        return keccak256(txBytes);
+    }
+
+    /**
      * @dev Encodes a uint value for RLP
      * @param value The value to encode
      * @return The RLP encoded value

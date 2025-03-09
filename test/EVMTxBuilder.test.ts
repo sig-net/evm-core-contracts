@@ -108,6 +108,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
   }
 
   async function buildAndSignTransaction(
+    evmTxBuilder: any,
     helperContract: any,
     toAddress: `0x${string}`,
     inputData: Hex,
@@ -156,7 +157,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
     );
 
     const viemTxHash = keccak256(serializedViemTx);
-    const evmTxHash = (await helperContract.read.getHashToSign([
+    const evmTxHash = (await evmTxBuilder.read.getHashToSign([
       serializedEVMTx,
     ])) as `0x${string}`;
 
@@ -210,7 +211,9 @@ describe("EVMTxBuilder Comparison with Viem", function () {
 
   describe("Direct Library Usage", function () {
     it("Should compare transaction building between EVMTxBuilder and viem", async function () {
-      const { helperContract } = await loadFixture(deployContracts);
+      const { helperContract, evmTxBuilder } = await loadFixture(
+        deployContracts
+      );
 
       const recipient = RECIPIENT;
       const value = 12382091830192n;
@@ -221,6 +224,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       });
 
       const { signedEVMTx } = await buildAndSignTransaction(
+        evmTxBuilder,
         helperContract,
         recipient,
         input,
@@ -241,7 +245,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
     });
 
     it("Should build and execute ERC20 transfer transaction", async function () {
-      const { helperContract, erc20Address } = await loadFixture(
+      const { helperContract, erc20Address, evmTxBuilder } = await loadFixture(
         deployContracts
       );
 
@@ -260,6 +264,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       });
 
       const { signedEVMTx } = await buildAndSignTransaction(
+        evmTxBuilder,
         helperContract,
         erc20Address,
         transferData
@@ -295,7 +300,9 @@ describe("EVMTxBuilder Comparison with Viem", function () {
     });
 
     it("Should build and execute NFT transfer transaction", async function () {
-      const { helperContract, nftAddress } = await loadFixture(deployContracts);
+      const { helperContract, nftAddress, evmTxBuilder } = await loadFixture(
+        deployContracts
+      );
 
       const mintTxHash = await walletClient.writeContract({
         address: nftAddress as `0x${string}`,
@@ -315,6 +322,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       });
 
       const { signedEVMTx } = await buildAndSignTransaction(
+        evmTxBuilder,
         helperContract,
         nftAddress as `0x${string}`,
         transferData

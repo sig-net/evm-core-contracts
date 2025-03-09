@@ -39,10 +39,12 @@ contract TestEVMTxBuilder {
      * @param txParams The transaction parameters
      * @return The RLP encoded unsigned transaction
      */
-    function createUnsignedTransaction(TransactionParams memory txParams) public pure returns (bytes memory) {
+    function createUnsignedTransaction(
+        TransactionParams memory txParams
+    ) public pure returns (bytes memory) {
         EVMTxBuilder.EVMTransaction memory tx = _buildEvmTransaction(txParams);
         tx.accessList = new EVMTxBuilder.AccessListEntry[](0);
-        
+
         return EVMTxBuilder.buildForSigning(tx);
     }
 
@@ -58,31 +60,24 @@ contract TestEVMTxBuilder {
     ) public pure returns (bytes memory) {
         EVMTxBuilder.EVMTransaction memory tx = _buildEvmTransaction(txParams);
         tx.accessList = new EVMTxBuilder.AccessListEntry[](0);
-        
+
         EVMTxBuilder.Signature memory evmSignature = EVMTxBuilder.Signature({
             v: signature.v,
             r: signature.r,
             s: signature.s
         });
-        
-        return EVMTxBuilder.buildWithSignature(tx, evmSignature);
-    }
 
-    /**
-     * @dev Get the hash of a transaction for signing
-     * @param txBytes The RLP encoded transaction
-     * @return The keccak256 hash that should be signed
-     */
-    function getHashToSign(bytes memory txBytes) public pure returns (bytes32) {
-        return keccak256(txBytes);
+        return EVMTxBuilder.buildWithSignature(tx, evmSignature);
     }
 
     /**
      * @dev Builds an EVM transaction from transaction parameters
      */
-    function _buildEvmTransaction(TransactionParams memory txParams) internal pure returns (EVMTxBuilder.EVMTransaction memory) {
+    function _buildEvmTransaction(
+        TransactionParams memory txParams
+    ) internal pure returns (EVMTxBuilder.EVMTransaction memory) {
         EVMTxBuilder.EVMTransaction memory tx;
-        
+
         tx.chainId = txParams.chainId;
         tx.nonce = txParams.nonce;
         tx.to = txParams.to;
@@ -92,7 +87,7 @@ contract TestEVMTxBuilder {
         tx.gasLimit = txParams.gasLimit;
         tx.maxFeePerGas = txParams.maxFeePerGas;
         tx.maxPriorityFeePerGas = txParams.maxPriorityFeePerGas;
-        
+
         return tx;
     }
-} 
+}
