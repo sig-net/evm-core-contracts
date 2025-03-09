@@ -47,7 +47,9 @@ describe("EVMTxBuilder Comparison with Viem", function () {
     "function transferFrom(address from, address to, uint256 tokenId)",
   ];
 
-  async function deployLibraryFixture() {
+  async function deployContracts() {
+    await hre.run("compile");
+
     const evmTxBuilder = await hre.viem.deployContract(
       "contracts/EVMTxBuilder/EVMTxBuilder.sol:EVMTxBuilder"
     );
@@ -63,20 +65,13 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       }
     );
 
-    return { evmTxBuilder, helperContract };
-  }
-
-  async function deployTokenFixture() {
-    await hre.run("compile");
-
-    const artifactPath = require.resolve(
+    const erc20Artifact = require(require.resolve(
       "../artifacts/contracts/test/TestERC20.sol/TestERC20.json"
-    );
-    const artifact = require(artifactPath);
+    ));
 
     const deployHash = await walletClient.deployContract({
-      abi: artifact.abi,
-      bytecode: artifact.bytecode as `0x${string}`,
+      abi: erc20Artifact.abi,
+      bytecode: erc20Artifact.bytecode as `0x${string}`,
       account: testAccount.address,
       gas: 5000000n,
       args: [],
@@ -87,10 +82,9 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       timeout: 5000,
     });
 
-    const nftArtifactPath = require.resolve(
+    const nftArtifact = require(require.resolve(
       "../artifacts/contracts/test/TestERC721.sol/TestERC721.json"
-    );
-    const nftArtifact = require(nftArtifactPath);
+    ));
 
     const nftDeployHash = await walletClient.deployContract({
       abi: nftArtifact.abi,
@@ -106,6 +100,8 @@ describe("EVMTxBuilder Comparison with Viem", function () {
     });
 
     return {
+      evmTxBuilder,
+      helperContract,
       erc20Address: erc20Receipt.contractAddress as `0x${string}`,
       nftAddress: nftReceipt.contractAddress as `0x${string}`,
     };
@@ -182,7 +178,14 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       evmSignature,
     ])) as Hex;
 
-    return { signedEVMTx, txParams };
+    const signedViemTx = await walletClient.signTransaction(viemTx);
+
+    expect(signedEVMTx).to.equal(
+      signedViemTx,
+      "Signed transactions should match"
+    );
+
+    return { signedEVMTx, txParams, signedViemTx };
   }
 
   async function executeAndVerifyTransaction(
@@ -195,7 +198,6 @@ describe("EVMTxBuilder Comparison with Viem", function () {
 
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: txHash,
-      timeout: 5000,
     });
 
     expect(receipt.status).to.equal(
@@ -208,11 +210,15 @@ describe("EVMTxBuilder Comparison with Viem", function () {
 
   describe("Direct Library Usage", function () {
     it("Should compare transaction building between EVMTxBuilder and viem", async function () {
-      const { helperContract } = await loadFixture(deployLibraryFixture);
+      const { helperContract } = await loadFixture(deployContracts);
 
       const recipient = RECIPIENT;
-      const value = 1000000000000000n;
+      const value = 12382091830192n;
       const input = "0x" as Hex;
+
+      const recipientBalanceBefore = await publicClient.getBalance({
+        address: recipient,
+      });
 
       const { signedEVMTx } = await buildAndSignTransaction(
         helperContract,
@@ -223,13 +229,21 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       );
 
       await executeAndVerifyTransaction(signedEVMTx, "ETH transfer");
-    });
-  });
 
-  describe("ERC20 Contract Interaction", function () {
+      const recipientBalanceAfter = await publicClient.getBalance({
+        address: recipient,
+      });
+
+      expect(recipientBalanceAfter - recipientBalanceBefore).to.equal(
+        value,
+        "Recipient should have received the ETH"
+      );
+    });
+
     it("Should build and execute ERC20 transfer transaction", async function () {
-      const { helperContract } = await loadFixture(deployLibraryFixture);
-      const { erc20Address } = await loadFixture(deployTokenFixture);
+      const { helperContract, erc20Address } = await loadFixture(
+        deployContracts
+      );
 
       await walletClient.writeContract({
         address: erc20Address,
@@ -279,12 +293,9 @@ describe("EVMTxBuilder Comparison with Viem", function () {
         "ERC20 balance should be 10"
       );
     });
-  });
 
-  describe("NFT Contract Interaction", function () {
     it("Should build and execute NFT transfer transaction", async function () {
-      const { helperContract } = await loadFixture(deployLibraryFixture);
-      const { nftAddress } = await loadFixture(deployTokenFixture);
+      const { helperContract, nftAddress } = await loadFixture(deployContracts);
 
       const mintTxHash = await walletClient.writeContract({
         address: nftAddress as `0x${string}`,
