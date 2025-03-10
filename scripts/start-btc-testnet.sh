@@ -6,29 +6,14 @@ source "${SCRIPT_DIR}/common.sh"
 
 log_info "Starting Bitcoin testnet container..."
 
-# Check if Docker is running
-check_docker
-
-# Check if container is already running
-if check_container_exists; then
-  log_success "Bitcoin testnet container is already running"
-  
-  # Set transaction fee settings even if already running
-  echo "Updating transaction fee settings..."
-  run_bitcoin_cli settxfee 0.00001 || true
-  log_success "Transaction fee settings updated"
-  
-  exit 0
-fi
-
-# Check if container exists but is stopped
+# Remove existing stopped container if it exists
 if docker ps -a | grep -q $CONTAINER_NAME; then
-  echo "Removing existing stopped container..."
+  log_info "Removing existing stopped container..."
   docker rm $CONTAINER_NAME || true
 fi
 
-echo "Creating new Bitcoin testnet container..."
-# Run the container with a specific name for easier reference
+log_info "Creating new Bitcoin testnet container..."
+# Run the container
 docker run -d --name $CONTAINER_NAME \
   -p ${RPC_PORT}:18443 \
   -e BITCOIN_RPC_USER=$RPC_USER \
@@ -44,8 +29,7 @@ docker run -d --name $CONTAINER_NAME \
   -maxtxfee=1.0 \
   -txconfirmtarget=1
 
-# Wait for the container to start up
-echo "Waiting for Bitcoin RPC service to start (this may take a few seconds)..."
+log_info "Waiting for Bitcoin RPC service to start..."
 sleep 10
 
 # Verify container is running
@@ -53,7 +37,7 @@ if ! check_container_exists; then
   log_error "Container failed to start"
   
   # Show container logs
-  echo "Container logs:"
+  log_info "Container logs:"
   docker logs $CONTAINER_NAME 2>&1 || true
   
   # Remove the failed container
@@ -62,37 +46,35 @@ if ! check_container_exists; then
   exit 1
 fi
 
-# Get container info
-echo "Container info:"
+log_info "Container info:"
 docker ps | grep $CONTAINER_NAME
 
-# Wait a bit more to ensure bitcoind is fully initialized
+# Wait for bitcoind initialization
 sleep 5
 
-# Generate initial blocks for testing
-echo "Creating wallet and generating initial blocks..."
+# Setup wallet
+log_info "Creating wallet and generating initial blocks..."
 run_bitcoin_cli createwallet default 2>/dev/null || true
 run_bitcoin_cli loadwallet default 2>/dev/null || true
 
 # Generate address and blocks
 ADDRESS=$(run_bitcoin_cli getnewaddress)
-# Make sure address was returned
 if [ -z "$ADDRESS" ]; then
   log_error "Failed to generate address"
   docker logs $CONTAINER_NAME
   exit 1
 fi
 
-echo "Mining 101 blocks to make coins spendable"
+log_info "Mining 101 blocks to make coins spendable"
 run_bitcoin_cli generatetoaddress 101 "$ADDRESS"
 
-# Verify container is functioning correctly
-echo "Verifying Bitcoin testnet setup..."
+# Verify setup
+log_info "Verifying Bitcoin testnet setup..."
 if run_bitcoin_cli getblockchaininfo; then
   log_success "Bitcoin testnet ready for testing!"
-  echo "RPC endpoint: http://localhost:${RPC_PORT}"
-  echo "Username: $RPC_USER"
-  echo "Password: $RPC_PASS"
+  log_info "RPC endpoint: http://localhost:${RPC_PORT}"
+  log_info "Username: $RPC_USER"
+  log_info "Password: $RPC_PASS"
   exit 0
 else
   log_error "Failed to verify Bitcoin testnet setup"

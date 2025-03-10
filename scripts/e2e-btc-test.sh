@@ -12,22 +12,20 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Timestamp function
+# Timestamp and logging functions
 timestamp() {
   date "+%Y-%m-%d %H:%M:%S"
 }
 
-# Log function that adds timestamp
 log() {
   echo -e "[$(timestamp)] $1"
 }
 
-# Header function for sections
 header() {
   echo -e "\n${BOLD}${BLUE}========== $1 ==========${NC}\n"
 }
 
-# Start from a clean state - ensure any existing containers are stopped
+# Start from a clean state
 cleanup_existing() {
   header "CLEANUP EXISTING CONTAINERS"
   log "${YELLOW}Checking for existing Bitcoin testnet containers...${NC}"
@@ -59,13 +57,10 @@ verify_network() {
   header "VERIFYING NETWORK"
   log "${YELLOW}Verifying Bitcoin network is operational...${NC}"
   
-  # Get blockchain info as a basic check
   BLOCKCHAIN_INFO=$(docker exec bitcoin-testnet bitcoin-cli -regtest -rpcuser=admin1 -rpcpassword=123 getblockchaininfo)
   BLOCKS=$(echo "$BLOCKCHAIN_INFO" | grep -o '"blocks": [0-9]*' | grep -o '[0-9]*')
   
   log "${GREEN}Network verification successful. Current block height: ${BLOCKS}${NC}"
-  
-  # Additional verification could be added here if needed
 }
 
 # Run the integration tests
@@ -73,7 +68,6 @@ run_tests() {
   header "RUNNING INTEGRATION TESTS"
   log "${YELLOW}Starting Bitcoin integration tests...${NC}"
   
-  # Run the tests and capture the exit code
   pnpm hardhat test test/BTCTxBuilder.test.ts
   TEST_RESULT=$?
   
@@ -81,10 +75,10 @@ run_tests() {
     log "${GREEN}All tests passed successfully!${NC}"
   else
     log "${RED}Tests failed with exit code: $TEST_RESULT${NC}"
-    TESTS_PASSED=false
+    return 1
   fi
   
-  return $TEST_RESULT
+  return 0
 }
 
 # Final cleanup
@@ -107,9 +101,6 @@ main() {
   header "BITCOIN E2E TEST WORKFLOW"
   log "${BOLD}Starting complete end-to-end test workflow${NC}"
   
-  # Track if tests passed
-  TESTS_PASSED=true
-  
   # Set up trap to ensure cleanup on exit
   trap cleanup EXIT
   
@@ -119,20 +110,16 @@ main() {
   verify_network
   
   # Run tests
-  if ! run_tests; then
-    TESTS_PASSED=false
-  fi
-  
-  # Final results
-  header "TEST RESULTS"
-  if [ "$TESTS_PASSED" = true ]; then
+  if run_tests; then
+    header "TEST RESULTS"
     log "${GREEN}${BOLD}E2E TEST WORKFLOW COMPLETED SUCCESSFULLY${NC}"
     exit 0
   else
+    header "TEST RESULTS"
     log "${RED}${BOLD}E2E TEST WORKFLOW FAILED${NC}"
     exit 1
   fi
 }
 
 # Execute main function
-main 
+main
