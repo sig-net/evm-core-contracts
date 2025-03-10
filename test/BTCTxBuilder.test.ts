@@ -7,7 +7,7 @@ import * as tinysecp from "tiny-secp256k1";
 
 const ECPair = ECPairFactory(tinysecp);
 
-const Client = require("bitcoin-core");
+import Client from "bitcoin-core";
 
 const BTC_RPC_URL = "http://localhost:19001";
 const BTC_RPC_USER = "admin1";
@@ -40,50 +40,19 @@ class BitcoinKeyPair {
   }
 }
 
-type BitcoinRPC = {
-  command(method: string, ...params: any[]): Promise<any>;
-  getBlockchainInfo(): Promise<any>;
-  getNewAddress(): Promise<string>;
-  validateAddress(address: string): Promise<any>;
-  generateToAddress(blocks: number, address: string): Promise<string[]>;
-  listUnspent(
-    minConf: number,
-    maxConf: number,
-    addresses?: string[]
-  ): Promise<any[]>;
-  getTxOut(txid: string, n: number): Promise<any>;
-  decodeRawTransaction(hexstring: string): Promise<any>;
-  getMemPoolEntry(txid: string): Promise<any>;
-  getTransaction(txid: string): Promise<any>;
-  importPrivKey(privkey: string, label: string, rescan: boolean): Promise<void>;
-  sendRawTransaction(hexstring: string): Promise<string>;
-  sendToAddress(
-    address: string,
-    amount: number,
-    comment?: string
-  ): Promise<string>;
-  createRawTransaction(inputs: any[], outputs: any): Promise<string>;
-  getAddressInfo(address: string): Promise<any>;
-  getRawTransaction(txid: string, verbose?: boolean): Promise<any>;
-};
-
 const bitcoinClient = new Client({
   host: BTC_RPC_URL,
   username: BTC_RPC_USER,
   password: BTC_RPC_PASS,
   timeout: 30000,
-}) as BitcoinRPC;
+});
 
 async function callBitcoinRPC(method: string, params: any[] = []) {
   try {
     const result = await bitcoinClient.command(method, ...params);
     return result;
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      throw new Error(`Bitcoin RPC call failed: ${error.message}`);
-    } else {
-      throw new Error(`Bitcoin RPC call failed: ${String(error)}`);
-    }
+    throw new Error(`Bitcoin RPC call failed: ${String(error)}`);
   }
 }
 
