@@ -1,8 +1,31 @@
 import { expect } from "chai";
 import hre from "hardhat";
-import axios from "axios";
+
 import * as bitcoin from "bitcoinjs-lib";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+
+import { secp256k1 } from "@noble/curves/secp256k1";
+
+const Client = require("bitcoin-core");
+
+type BitcoinRPC = {
+  command(method: string, ...params: any[]): Promise<any>;
+  getBlockchainInfo(): Promise<any>;
+  getNewAddress(): Promise<string>;
+  validateAddress(address: string): Promise<any>;
+  generateToAddress(blocks: number, address: string): Promise<string[]>;
+  listUnspent(
+    minConf: number,
+    maxConf: number,
+    addresses: string[]
+  ): Promise<any[]>;
+  getTxOut(txid: string, n: number): Promise<any>;
+  decodeRawTransaction(hexstring: string): Promise<any>;
+  getMemPoolEntry(txid: string): Promise<any>;
+  getTransaction(txid: string): Promise<any>;
+  signRawTransactionWithWallet(hexstring: string): Promise<any>;
+  sendRawTransaction(hexstring: string): Promise<string>;
+};
 
 interface BTCInput {
   txid: `0x${string}`;
@@ -28,68 +51,30 @@ interface BTCTransaction {
 
 const BTC_RPC_USER = "admin1";
 const BTC_RPC_PASS = "123";
-const BTC_RPC_HOST = "http://localhost:19001";
+const BTC_RPC_URL = "http://localhost:19001";
+
+const bitcoinClient = new Client({
+  host: BTC_RPC_URL,
+  username: BTC_RPC_USER,
+  password: BTC_RPC_PASS,
+  timeout: 30000,
+}) as BitcoinRPC;
 
 async function callBitcoinRPC(method: string, params: any[] = []) {
   try {
-    try {
-      const response = await axios.post(
-        BTC_RPC_HOST,
-        {
-          jsonrpc: "1.0",
-          id: "btc-testnet",
-          method,
-          params,
-        },
-        {
-          auth: {
-            username: BTC_RPC_USER,
-            password: BTC_RPC_PASS,
-          },
-          timeout: 5000,
-        }
-      );
+    const result = await bitcoinClient.command(method, ...params);
 
-      if (response.data.error) {
-        console.error(`RPC Error: ${JSON.stringify(response.data.error)}`);
-        throw new Error(response.data.error.message || "Unknown RPC error");
-      }
-
-      return response.data.result;
-    } catch (authError) {
-      const response = await axios.post(
-        BTC_RPC_HOST,
-        {
-          jsonrpc: "1.0",
-          id: "btc-testnet",
-          method,
-          params,
-        },
-        {
-          timeout: 5000,
-        }
-      );
-
-      if (response.data.error) {
-        console.error(`RPC Error: ${JSON.stringify(response.data.error)}`);
-        throw new Error(response.data.error.message || "Unknown RPC error");
-      }
-
-      return response.data.result;
-    }
+    return result;
   } catch (error: unknown) {
-    if (axios.isAxiosError(error)) {
-      console.error("Bitcoin RPC connection error:", error.message);
-      if (error.response) {
-        console.error("Response data:", JSON.stringify(error.response.data));
-      }
-      throw new Error(`Bitcoin RPC connection failed: ${error.message}`);
+    console.error("Bitcoin RPC error type:", typeof error);
+
+    if (error instanceof Error) {
+      console.error("Bitcoin RPC error:", error.message);
+      console.error("Error stack:", error.stack);
+      throw new Error(`Bitcoin RPC call failed: ${error.message}`);
     } else {
-      console.error(
-        "Unexpected error:",
-        error instanceof Error ? error.message : String(error)
-      );
-      throw new Error(error instanceof Error ? error.message : String(error));
+      console.error("Unexpected error:", String(error));
+      throw new Error(`Bitcoin RPC call failed: ${String(error)}`);
     }
   }
 }
@@ -102,15 +87,71 @@ function btcToSatoshis(btc: number): bigint {
   return BigInt(Math.floor(btc * 100000000));
 }
 
+function signMessage(
+  message: Uint8Array,
+  privateKey: Uint8Array
+): { signature: Uint8Array; recoveryId: number } {
+  const signature = secp256k1.sign(message, privateKey);
+
+  return {
+    signature: signature.toCompactRawBytes(),
+    recoveryId: signature.recovery,
+  };
+}
+
+function signWithPrivateKey(
+  txHash: `0x${string}`,
+  privateKey: Uint8Array
+): `0x${string}` {
+  const messageHash = Buffer.from(txHash.substring(2), "hex");
+
+  const { signature } = signMessage(messageHash, privateKey);
+
+  const derSignature = bitcoin.script.signature.encode(
+    Buffer.from(signature),
+    0x01
+  );
+
+  return `0x${Buffer.from(derSignature).toString("hex")}`;
+}
+
+async function signRawTransaction(hexString: string): Promise<string> {
+  const txHex = hexString.startsWith("0x") ? hexString.substring(2) : hexString;
+
+  try {
+    const signResult = await callBitcoinRPC("signrawtransactionwithwallet", [
+      txHex,
+    ]);
+
+    if (!signResult.complete) {
+      throw new Error(
+        "Failed to sign transaction: " + JSON.stringify(signResult.errors)
+      );
+    }
+
+    return signResult.hex;
+  } catch (error) {
+    try {
+      const signResult = await callBitcoinRPC("signrawtransaction", [txHex]);
+
+      if (!signResult.complete) {
+        throw new Error(
+          "Failed to sign transaction: " + JSON.stringify(signResult.errors)
+        );
+      }
+
+      return signResult.hex;
+    } catch (fallbackError) {
+      console.error("Both signing methods failed:", fallbackError);
+      throw fallbackError;
+    }
+  }
+}
+
 describe("BTCTxBuilder Integration Tests", function () {
-  this.timeout(120000);
-
-  let containerRunning = false;
-
   before(async function () {
     try {
       await callBitcoinRPC("getblockchaininfo");
-      containerRunning = true;
     } catch (error: unknown) {
       console.warn(
         "Bitcoin testnet not available or not responsive. Skipping integration tests."
@@ -145,41 +186,6 @@ describe("BTCTxBuilder Integration Tests", function () {
     return { btcTxBuilder, helperContract };
   }
 
-  async function signRawTransaction(hexString: string): Promise<string> {
-    const txHex = hexString.startsWith("0x")
-      ? hexString.substring(2)
-      : hexString;
-
-    try {
-      const signResult = await callBitcoinRPC("signrawtransactionwithwallet", [
-        txHex,
-      ]);
-
-      if (!signResult.complete) {
-        throw new Error(
-          "Failed to sign transaction: " + JSON.stringify(signResult.errors)
-        );
-      }
-
-      return signResult.hex;
-    } catch (error) {
-      try {
-        const signResult = await callBitcoinRPC("signrawtransaction", [txHex]);
-
-        if (!signResult.complete) {
-          throw new Error(
-            "Failed to sign transaction: " + JSON.stringify(signResult.errors)
-          );
-        }
-
-        return signResult.hex;
-      } catch (fallbackError) {
-        console.error("Both signing methods failed:", fallbackError);
-        throw fallbackError;
-      }
-    }
-  }
-
   async function sendRawTransaction(hexString: string): Promise<string> {
     const txHex = hexString.startsWith("0x")
       ? hexString.substring(2)
@@ -195,8 +201,6 @@ describe("BTCTxBuilder Integration Tests", function () {
     } catch (error) {
       try {
         const txInfo = await callBitcoinRPC("gettransaction", [txid]);
-
-        console.log("Transaction found in blockchain:", txInfo);
 
         return true;
       } catch (getError) {
@@ -305,8 +309,6 @@ describe("BTCTxBuilder Integration Tests", function () {
           satoshisValue,
           1,
         ]);
-
-        // TODO: sign the hash to sign instead of the unsignedTx
 
         const signedTxHex = await signRawTransaction(unsignedTx);
 
