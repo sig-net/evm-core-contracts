@@ -4,6 +4,7 @@ import hre from "hardhat";
 import * as bitcoin from "bitcoinjs-lib";
 import { ECPairFactory } from "ecpair";
 import * as tinysecp from "tiny-secp256k1";
+import { secp256k1 } from "@noble/curves/secp256k1";
 
 const ECPair = ECPairFactory(tinysecp);
 
@@ -28,8 +29,20 @@ class BitcoinKeyPair {
     return Buffer.from(this._keyPair.publicKey);
   }
 
+  get privateKey(): Buffer | undefined {
+    return this._keyPair.privateKey
+      ? Buffer.from(this._keyPair.privateKey)
+      : undefined;
+  }
+
   sign(hash: Buffer): Buffer {
-    return Buffer.from(this._keyPair.sign(hash));
+    if (!this.privateKey) {
+      throw new Error("Cannot sign without private key");
+    }
+
+    // Use noble/curves secp256k1 for signing
+    const signature = secp256k1.sign(hash, this.privateKey);
+    return Buffer.from(signature.toCompactRawBytes());
   }
 
   createP2WPKH(network = bitcoin.networks.regtest): bitcoin.payments.Payment {

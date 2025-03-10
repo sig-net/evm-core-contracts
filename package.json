@@ -2,10 +2,6 @@
   "name": "hardhat-project",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
-    "@types/axios": "^0.14.4",
-    "axios": "^1.8.2",
-    "bip32": "5.0.0-rc.0",
-    "bip39": "^3.1.0",
     "bitcoinjs-lib": "^6.1.7",
     "bitcore-lib": "^10.8.0",
     "hardhat": "^2.22.19",
