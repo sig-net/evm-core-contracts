@@ -1,35 +1,22 @@
 #!/usr/bin/env bash
 
-# Colors for output
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+# Source common functions and variables
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
 
-echo -e "${YELLOW}Starting Bitcoin testnet container...${NC}"
-
-# Define container name and image for consistency
-CONTAINER_NAME="bitcoin-testnet"
-BITCOIN_IMAGE="ruimarinho/bitcoin-core:latest"
-
-# Define RPC credentials
-RPC_USER="admin1"
-RPC_PASS="123"
+log_info "Starting Bitcoin testnet container..."
 
 # Check if Docker is running
-if ! docker info > /dev/null 2>&1; then
-  echo -e "${RED}Docker is not running or accessible${NC}"
-  exit 1
-fi
+check_docker
 
 # Check if container is already running
-if docker ps | grep -q $CONTAINER_NAME; then
-  echo -e "${GREEN}Bitcoin testnet container is already running${NC}"
+if check_container_exists; then
+  log_success "Bitcoin testnet container is already running"
   
   # Set transaction fee settings even if already running
   echo "Updating transaction fee settings..."
-  docker exec $CONTAINER_NAME bitcoin-cli -regtest -rpcuser=$RPC_USER -rpcpassword=$RPC_PASS settxfee 0.00001 || true
-  echo -e "${GREEN}Transaction fee settings updated${NC}"
+  run_bitcoin_cli settxfee 0.00001 || true
+  log_success "Transaction fee settings updated"
   
   exit 0
 fi
@@ -42,9 +29,8 @@ fi
 
 echo "Creating new Bitcoin testnet container..."
 # Run the container with a specific name for easier reference
-# This image has better ARM64 support
 docker run -d --name $CONTAINER_NAME \
-  -p 19001:18443 \
+  -p ${RPC_PORT}:18443 \
   -e BITCOIN_RPC_USER=$RPC_USER \
   -e BITCOIN_RPC_PASSWORD=$RPC_PASS \
   -e BITCOIN_RPC_ALLOW_IP=0.0.0.0/0 \
@@ -63,8 +49,8 @@ echo "Waiting for Bitcoin RPC service to start (this may take a few seconds)..."
 sleep 10
 
 # Verify container is running
-if ! docker ps | grep -q $CONTAINER_NAME; then
-  echo -e "${RED}Container failed to start${NC}"
+if ! check_container_exists; then
+  log_error "Container failed to start"
   
   # Show container logs
   echo "Container logs:"
@@ -85,30 +71,30 @@ sleep 5
 
 # Generate initial blocks for testing
 echo "Creating wallet and generating initial blocks..."
-docker exec $CONTAINER_NAME bitcoin-cli -regtest -rpcuser=$RPC_USER -rpcpassword=$RPC_PASS createwallet default 2>/dev/null || true
-docker exec $CONTAINER_NAME bitcoin-cli -regtest -rpcuser=$RPC_USER -rpcpassword=$RPC_PASS loadwallet default 2>/dev/null || true
+run_bitcoin_cli createwallet default 2>/dev/null || true
+run_bitcoin_cli loadwallet default 2>/dev/null || true
 
 # Generate address and blocks
-ADDRESS=$(docker exec $CONTAINER_NAME bitcoin-cli -regtest -rpcuser=$RPC_USER -rpcpassword=$RPC_PASS getnewaddress)
+ADDRESS=$(run_bitcoin_cli getnewaddress)
 # Make sure address was returned
 if [ -z "$ADDRESS" ]; then
-  echo -e "${RED}Failed to generate address${NC}"
+  log_error "Failed to generate address"
   docker logs $CONTAINER_NAME
   exit 1
 fi
 
 echo "Mining 101 blocks to make coins spendable"
-docker exec $CONTAINER_NAME bitcoin-cli -regtest -rpcuser=$RPC_USER -rpcpassword=$RPC_PASS generatetoaddress 101 "$ADDRESS"
+run_bitcoin_cli generatetoaddress 101 "$ADDRESS"
 
 # Verify container is functioning correctly
 echo "Verifying Bitcoin testnet setup..."
-if docker exec $CONTAINER_NAME bitcoin-cli -regtest -rpcuser=$RPC_USER -rpcpassword=$RPC_PASS getblockchaininfo; then
-  echo -e "${GREEN}Bitcoin testnet ready for testing!${NC}"
-  echo "RPC endpoint: http://localhost:19001"
+if run_bitcoin_cli getblockchaininfo; then
+  log_success "Bitcoin testnet ready for testing!"
+  echo "RPC endpoint: http://localhost:${RPC_PORT}"
   echo "Username: $RPC_USER"
   echo "Password: $RPC_PASS"
   exit 0
 else
-  echo -e "${RED}Failed to verify Bitcoin testnet setup${NC}"
+  log_error "Failed to verify Bitcoin testnet setup"
   exit 1
 fi

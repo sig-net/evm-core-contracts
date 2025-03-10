@@ -13,21 +13,6 @@ const BTC_RPC_URL = "http://localhost:19001";
 const BTC_RPC_USER = "admin1";
 const BTC_RPC_PASS = "123";
 
-const PRIVATE_KEY = Buffer.from(
-  "0000000000000000000000000000000000000000000000000000000000000001",
-  "hex"
-);
-
-const TEST_KEY_PAIR = ECPair.fromPrivateKey(PRIVATE_KEY);
-const PUBLIC_KEY = Buffer.from(TEST_KEY_PAIR.publicKey);
-
-const p2wpkh = bitcoin.payments.p2wpkh({
-  pubkey: PUBLIC_KEY,
-  network: bitcoin.networks.regtest,
-});
-
-const TEST_ADDRESS = p2wpkh.address as string;
-
 class BitcoinKeyPair {
   private _keyPair: ReturnType<typeof ECPair.makeRandom>;
 
@@ -82,20 +67,6 @@ type BitcoinRPC = {
   getRawTransaction(txid: string, verbose?: boolean): Promise<any>;
 };
 
-interface BTCInput {
-  txid: `0x${string}`;
-  vout: number;
-  scriptSig: `0x${string}`;
-  sequence: number;
-  witnessData: `0x${string}`;
-  scriptType: number;
-}
-
-interface BTCOutput {
-  value: bigint;
-  scriptPubKey: `0x${string}`;
-}
-
 const bitcoinClient = new Client({
   host: BTC_RPC_URL,
   username: BTC_RPC_USER,
@@ -113,40 +84,6 @@ async function callBitcoinRPC(method: string, params: any[] = []) {
     } else {
       throw new Error(`Bitcoin RPC call failed: ${String(error)}`);
     }
-  }
-}
-
-async function signRawTransaction(
-  hexString: string,
-  utxoAmount: number
-): Promise<string> {
-  const txHex = hexString.startsWith("0x") ? hexString.substring(2) : hexString;
-
-  try {
-    const txBuffer = Buffer.from(txHex, "hex");
-    const tx = bitcoin.Transaction.fromBuffer(txBuffer);
-    const input = 0;
-    const prevOutScript = p2wpkh.output as Buffer;
-    const inputValue = Math.floor(utxoAmount * 100000000);
-
-    const hashForSignature = tx.hashForWitnessV0(
-      input,
-      prevOutScript,
-      inputValue,
-      bitcoin.Transaction.SIGHASH_ALL
-    );
-
-    const signature = TEST_KEY_PAIR.sign(hashForSignature);
-    const derSignature = bitcoin.script.signature.encode(
-      Buffer.from(signature),
-      bitcoin.Transaction.SIGHASH_ALL
-    );
-
-    tx.setWitness(input, [derSignature, PUBLIC_KEY]);
-
-    return tx.toHex();
-  } catch (error) {
-    throw error;
   }
 }
 
