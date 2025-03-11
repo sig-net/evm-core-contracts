@@ -90,7 +90,16 @@ library BTCTxBuilder {
         if (tx.hasWitness) {
             for (uint i = 0; i < tx.inputs.length; i++) {
                 if (tx.inputs[i].witnessData.length > 0) {
-                    result = bytes.concat(result, tx.inputs[i].witnessData);
+                    // For P2WPKH, we need to add the witness count (0x02) before the witness data
+                    if (tx.inputs[i].scriptType == P2WPKH) {
+                        result = bytes.concat(
+                            result,
+                            bytes1(0x02),
+                            tx.inputs[i].witnessData
+                        );
+                    } else {
+                        result = bytes.concat(result, tx.inputs[i].witnessData);
+                    }
                 } else {
                     result = bytes.concat(result, bytes1(0x00));
                 }
@@ -124,6 +133,7 @@ library BTCTxBuilder {
         );
 
         BTCTransaction memory signedTx = tx;
+        signedTx.hasWitness = false;
 
         for (uint i = 0; i < tx.inputs.length; i++) {
             if (tx.inputs[i].scriptType == P2PKH) {
@@ -158,9 +168,13 @@ library BTCTxBuilder {
         Signature memory signature,
         bytes memory pubKey
     ) internal pure returns (bytes memory) {
-        bytes memory sigWithHashType = bytes.concat(
+        // Create DER encoded signature
+        bytes memory derSignature = encodeDERSignature(
             signature.r,
-            signature.s,
+            signature.s
+        );
+        bytes memory sigWithHashType = bytes.concat(
+            derSignature,
             bytes1(signature.hashType)
         );
 
@@ -171,6 +185,70 @@ library BTCTxBuilder {
                 bytes1(uint8(pubKey.length)),
                 pubKey
             );
+    }
+
+    /**
+     * @dev Encodes a signature in DER format
+     * @param r The r value of the signature
+     * @param s The s value of the signature
+     * @return The DER encoded signature
+     */
+    function encodeDERSignature(
+        bytes memory r,
+        bytes memory s
+    ) internal pure returns (bytes memory) {
+        // Remove leading zeros from r and s
+        bytes memory rTrimmed = trimLeadingZeros(r);
+        bytes memory sTrimmed = trimLeadingZeros(s);
+
+        // Check if the first byte has the high bit set
+        // If so, we need to add a 00 byte to indicate it's positive
+        bytes memory rEncoded = rTrimmed;
+        if (rTrimmed.length > 0 && uint8(rTrimmed[0]) >= 0x80) {
+            rEncoded = bytes.concat(bytes1(0x00), rTrimmed);
+        }
+
+        bytes memory sEncoded = sTrimmed;
+        if (sTrimmed.length > 0 && uint8(sTrimmed[0]) >= 0x80) {
+            sEncoded = bytes.concat(bytes1(0x00), sTrimmed);
+        }
+
+        // Calculate total length
+        uint8 totalLength = uint8(rEncoded.length + sEncoded.length + 4); // 4 for the type and length bytes
+
+        // Construct DER signature
+        return
+            bytes.concat(
+                bytes1(0x30), // Sequence
+                bytes1(totalLength),
+                bytes1(0x02), // Integer
+                bytes1(uint8(rEncoded.length)),
+                rEncoded,
+                bytes1(0x02), // Integer
+                bytes1(uint8(sEncoded.length)),
+                sEncoded
+            );
+    }
+
+    /**
+     * @dev Removes leading zeros from a byte array
+     * @param data The byte array
+     * @return The byte array without leading zeros
+     */
+    function trimLeadingZeros(
+        bytes memory data
+    ) internal pure returns (bytes memory) {
+        uint startIndex = 0;
+        while (startIndex < data.length && data[startIndex] == 0) {
+            startIndex++;
+        }
+
+        bytes memory result = new bytes(data.length - startIndex);
+        for (uint i = 0; i < result.length; i++) {
+            result[i] = data[i + startIndex];
+        }
+
+        return result;
     }
 
     /**
@@ -185,25 +263,32 @@ library BTCTxBuilder {
         bytes memory pubKey,
         uint8 scriptType
     ) internal pure returns (bytes memory) {
-        bytes memory sigWithHashType = bytes.concat(
+        // Create DER encoded signature
+        bytes memory derSignature = encodeDERSignature(
             signature.r,
-            signature.s,
+            signature.s
+        );
+        bytes memory sigWithHashType = bytes.concat(
+            derSignature,
             bytes1(signature.hashType)
         );
 
         if (scriptType == P2WPKH) {
+            // For P2WPKH, the witness is:
+            // <witness-count> <sig-with-hashtype-len> <sig-with-hashtype> <pubkey-len> <pubkey>
+            // The witness count (0x02) is added by the buildUnsignedTransaction function
             return
                 bytes.concat(
-                    bytes1(0x02),
                     bytes1(uint8(sigWithHashType.length)),
                     sigWithHashType,
                     bytes1(uint8(pubKey.length)),
                     pubKey
                 );
         } else if (scriptType == P2WSH) {
+            // For P2WSH, the witness depends on the specific script
+            // This is a simplified version for a basic P2WSH
             return
                 bytes.concat(
-                    bytes1(0x02),
                     bytes1(uint8(sigWithHashType.length)),
                     sigWithHashType,
                     bytes1(uint8(pubKey.length)),
@@ -241,6 +326,48 @@ library BTCTxBuilder {
         } else {
             return hashForLegacy(tx, inputIndex, scriptCode, hashType);
         }
+    }
+
+    /**
+     * @dev Computes the transaction hashes for signing all inputs
+     * @param tx The transaction
+     * @param scriptCodes The script codes for each input
+     * @param values The values of each input (for SegWit only)
+     * @param hashType The signature hash type
+     * @return The transaction hashes for all inputs
+     */
+    function getAllHashesToSign(
+        BTCTransaction memory tx,
+        bytes[] memory scriptCodes,
+        uint64[] memory values,
+        uint8 hashType
+    ) public pure returns (bytes32[] memory) {
+        require(
+            scriptCodes.length == tx.inputs.length,
+            "Script codes length mismatch"
+        );
+        require(values.length == tx.inputs.length, "Values length mismatch");
+
+        bytes32[] memory hashes = new bytes32[](tx.inputs.length);
+
+        for (uint i = 0; i < tx.inputs.length; i++) {
+            if (
+                tx.inputs[i].scriptType == P2WPKH ||
+                tx.inputs[i].scriptType == P2WSH
+            ) {
+                hashes[i] = hashForWitnessV0(
+                    tx,
+                    i,
+                    scriptCodes[i],
+                    values[i],
+                    hashType
+                );
+            } else {
+                hashes[i] = hashForLegacy(tx, i, scriptCodes[i], hashType);
+            }
+        }
+
+        return hashes;
     }
 
     /**
@@ -391,14 +518,10 @@ library BTCTxBuilder {
         bytes32 value
     ) internal pure returns (bytes memory) {
         bytes memory result = new bytes(32);
-        bytes32 reversed = 0;
 
+        // Reverse the byte order
         for (uint i = 0; i < 32; i++) {
-            reversed |= bytes32(uint256(uint8(value[i])) << (8 * (31 - i)));
-        }
-
-        assembly {
-            mstore(add(result, 32), reversed)
+            result[i] = value[31 - i];
         }
 
         return result;

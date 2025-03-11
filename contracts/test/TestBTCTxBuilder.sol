@@ -55,7 +55,9 @@ contract TestBTCTxBuilder {
      * @param txParams The transaction parameters
      * @return The serialized unsigned transaction
      */
-    function createUnsignedTransaction(TransactionParams memory txParams) public pure returns (bytes memory) {
+    function createUnsignedTransaction(
+        TransactionParams memory txParams
+    ) public pure returns (bytes memory) {
         BTCTxBuilder.BTCTransaction memory tx = _buildBtcTransaction(txParams);
         return BTCTxBuilder.buildUnsignedTransaction(tx);
     }
@@ -73,8 +75,11 @@ contract TestBTCTxBuilder {
         bytes[] memory pubKeys
     ) public pure returns (bytes memory) {
         BTCTxBuilder.BTCTransaction memory tx = _buildBtcTransaction(txParams);
-        
-        BTCTxBuilder.Signature[] memory btcSignatures = new BTCTxBuilder.Signature[](signatures.length);
+
+        BTCTxBuilder.Signature[]
+            memory btcSignatures = new BTCTxBuilder.Signature[](
+                signatures.length
+            );
         for (uint i = 0; i < signatures.length; i++) {
             btcSignatures[i] = BTCTxBuilder.Signature({
                 r: signatures[i].r,
@@ -82,7 +87,7 @@ contract TestBTCTxBuilder {
                 hashType: signatures[i].hashType
             });
         }
-        
+
         return BTCTxBuilder.buildSignedTransaction(tx, btcSignatures, pubKeys);
     }
 
@@ -103,19 +108,47 @@ contract TestBTCTxBuilder {
         uint8 hashType
     ) public pure returns (bytes32) {
         BTCTxBuilder.BTCTransaction memory tx = _buildBtcTransaction(txParams);
-        return BTCTxBuilder.getHashToSign(tx, inputIndex, scriptCode, value, hashType);
+        return
+            BTCTxBuilder.getHashToSign(
+                tx,
+                inputIndex,
+                scriptCode,
+                value,
+                hashType
+            );
+    }
+
+    /**
+     * @dev Get all hashes of a transaction for signing all inputs
+     * @param txParams The transaction parameters
+     * @param scriptCodes The script codes for each input
+     * @param values The values of each input (for SegWit only)
+     * @param hashType The signature hash type
+     * @return The hashes that should be signed for each input
+     */
+    function getAllHashesToSign(
+        TransactionParams memory txParams,
+        bytes[] memory scriptCodes,
+        uint64[] memory values,
+        uint8 hashType
+    ) public pure returns (bytes32[] memory) {
+        BTCTxBuilder.BTCTransaction memory tx = _buildBtcTransaction(txParams);
+        return
+            BTCTxBuilder.getAllHashesToSign(tx, scriptCodes, values, hashType);
     }
 
     /**
      * @dev Builds a BTC transaction from transaction parameters
      */
-    function _buildBtcTransaction(TransactionParams memory txParams) internal pure returns (BTCTxBuilder.BTCTransaction memory) {
+    function _buildBtcTransaction(
+        TransactionParams memory txParams
+    ) internal pure returns (BTCTxBuilder.BTCTransaction memory) {
         BTCTxBuilder.BTCTransaction memory tx;
-        
+
         tx.version = txParams.version;
         tx.locktime = txParams.locktime;
         tx.hasWitness = txParams.hasWitness;
-        
+
         tx.inputs = new BTCTxBuilder.TxInput[](txParams.inputs.length);
         for (uint i = 0; i < txParams.inputs.length; i++) {
             tx.inputs[i] = BTCTxBuilder.TxInput({
@@ -127,7 +160,7 @@ contract TestBTCTxBuilder {
                 scriptType: txParams.inputs[i].scriptType
             });
         }
-        
+
         tx.outputs = new BTCTxBuilder.TxOutput[](txParams.outputs.length);
         for (uint i = 0; i < txParams.outputs.length; i++) {
             tx.outputs[i] = BTCTxBuilder.TxOutput({
@@ -135,7 +168,7 @@ contract TestBTCTxBuilder {
                 scriptPubKey: txParams.outputs[i].scriptPubKey
             });
         }
-        
+
         return tx;
     }
 }
