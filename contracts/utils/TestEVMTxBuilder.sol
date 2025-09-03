@@ -26,6 +26,19 @@ contract TestEVMTxBuilder {
     }
 
     /**
+     * @dev Encodes ERC20 transfer input data on-chain
+     * @param to Recipient address
+     * @param amount Transfer amount
+     * @return The ABI-encoded calldata for ERC20.transfer(address,uint256)
+     */
+    function encodeErc20TransferInput(
+        address to,
+        uint256 amount
+    ) public pure returns (bytes memory) {
+        return abi.encodeWithSignature("transfer(address,uint256)", to, amount);
+    }
+
+    /**
      * @dev A structured representation of a signature
      */
     struct Signature {

@@ -1,4 +1,5 @@
 pragma solidity ^0.8.28;
+import {Lib_RLPWriter as RLPWriter} from "@eth-optimism/contracts/libraries/rlp/Lib_RLPWriter.sol";
 
 /**
  * @title EVMTxBuilder
@@ -36,9 +37,7 @@ library EVMTxBuilder {
      * @param tx The transaction to build
      * @return The RLP encoded transaction data
      */
-    function buildForSigning(
-        EVMTransaction memory tx
-    ) public pure returns (bytes memory) {
+    function buildForSigning(EVMTransaction memory tx) public pure returns (bytes memory) {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
 
@@ -60,10 +59,7 @@ library EVMTxBuilder {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
 
-        bytes memory encodedFieldsWithSignature = encodeFieldsWithSignature(
-            tx,
-            signature
-        );
+        bytes memory encodedFieldsWithSignature = encodeFieldsWithSignature(tx, signature);
 
         return bytes.concat(result, encodedFieldsWithSignature);
     }
@@ -73,28 +69,26 @@ library EVMTxBuilder {
      * @param tx The transaction to encode
      * @return The RLP encoded transaction fields
      */
-    function encodeFields(
-        EVMTransaction memory tx
-    ) internal pure returns (bytes memory) {
+    function encodeFields(EVMTransaction memory tx) internal pure returns (bytes memory) {
         bytes[] memory elements = new bytes[](9);
 
-        elements[0] = rlpEncodeUint(tx.chainId);
-        elements[1] = rlpEncodeUint(tx.nonce);
-        elements[2] = rlpEncodeUint(tx.maxPriorityFeePerGas);
-        elements[3] = rlpEncodeUint(tx.maxFeePerGas);
-        elements[4] = rlpEncodeUint(tx.gasLimit);
+        elements[0] = RLPWriter.writeUint(uint(tx.chainId));
+        elements[1] = RLPWriter.writeUint(uint(tx.nonce));
+        elements[2] = RLPWriter.writeUint(uint(tx.maxPriorityFeePerGas));
+        elements[3] = RLPWriter.writeUint(uint(tx.maxFeePerGas));
+        elements[4] = RLPWriter.writeUint(uint(tx.gasLimit));
 
         if (tx.hasTo) {
-            elements[5] = rlpEncodeAddress(tx.to);
+            elements[5] = RLPWriter.writeAddress(tx.to);
         } else {
-            elements[5] = rlpEncodeEmptyBytes();
+            elements[5] = RLPWriter.writeBytes("");
         }
 
-        elements[6] = rlpEncodeUint(tx.value);
-        elements[7] = rlpEncodeBytes(tx.input);
-        elements[8] = rlpEncodeAccessList(tx.accessList);
+        elements[6] = RLPWriter.writeUint(uint(tx.value));
+        elements[7] = RLPWriter.writeBytes(tx.input);
+        elements[8] = _writeAccessList(tx.accessList);
 
-        return rlpEncodeList(elements);
+        return RLPWriter.writeList(elements);
     }
 
     /**
@@ -109,26 +103,26 @@ library EVMTxBuilder {
     ) internal pure returns (bytes memory) {
         bytes[] memory elements = new bytes[](12);
 
-        elements[0] = rlpEncodeUint(tx.chainId);
-        elements[1] = rlpEncodeUint(tx.nonce);
-        elements[2] = rlpEncodeUint(tx.maxPriorityFeePerGas);
-        elements[3] = rlpEncodeUint(tx.maxFeePerGas);
-        elements[4] = rlpEncodeUint(tx.gasLimit);
+        elements[0] = RLPWriter.writeUint(uint(tx.chainId));
+        elements[1] = RLPWriter.writeUint(uint(tx.nonce));
+        elements[2] = RLPWriter.writeUint(uint(tx.maxPriorityFeePerGas));
+        elements[3] = RLPWriter.writeUint(uint(tx.maxFeePerGas));
+        elements[4] = RLPWriter.writeUint(uint(tx.gasLimit));
 
         if (tx.hasTo) {
-            elements[5] = rlpEncodeAddress(tx.to);
+            elements[5] = RLPWriter.writeAddress(tx.to);
         } else {
-            elements[5] = rlpEncodeEmptyBytes();
+            elements[5] = RLPWriter.writeBytes("");
         }
 
-        elements[6] = rlpEncodeUint(tx.value);
-        elements[7] = rlpEncodeBytes(tx.input);
-        elements[8] = rlpEncodeAccessList(tx.accessList);
-        elements[9] = rlpEncodeUint(signature.v);
-        elements[10] = rlpEncodeBytes32(signature.r);
-        elements[11] = rlpEncodeBytes32(signature.s);
+        elements[6] = RLPWriter.writeUint(uint(tx.value));
+        elements[7] = RLPWriter.writeBytes(tx.input);
+        elements[8] = _writeAccessList(tx.accessList);
+        elements[9] = RLPWriter.writeUint(uint(signature.v));
+        elements[10] = RLPWriter.writeBytes(abi.encodePacked(signature.r));
+        elements[11] = RLPWriter.writeBytes(abi.encodePacked(signature.s));
 
-        return rlpEncodeList(elements);
+        return RLPWriter.writeList(elements);
     }
 
     /**
@@ -141,200 +135,25 @@ library EVMTxBuilder {
     }
 
     /**
-     * @dev Encodes a uint value for RLP
-     * @param value The value to encode
-     * @return The RLP encoded value
-     */
-    function rlpEncodeUint(uint value) internal pure returns (bytes memory) {
-        if (value == 0) {
-            bytes memory result = new bytes(1);
-            result[0] = 0x80;
-            return result;
-        } else if (value < 128) {
-            bytes memory result = new bytes(1);
-            result[0] = bytes1(uint8(value));
-            return result;
-        } else {
-            bytes memory encoded = uintToBytes(value);
-            return rlpEncodeBytes(encoded);
-        }
-    }
-
-    /**
-     * @dev Encodes an address for RLP
-     * @param addr The address to encode
-     * @return The RLP encoded address
-     */
-    function rlpEncodeAddress(
-        address addr
-    ) internal pure returns (bytes memory) {
-        bytes memory addrBytes = new bytes(20);
-
-        uint160 addrValue = uint160(addr);
-
-        for (uint i = 0; i < 20; i++) {
-            addrBytes[i] = bytes1(uint8(addrValue >> (8 * (19 - i))));
-        }
-
-        return rlpEncodeBytes(addrBytes);
-    }
-
-    /**
-     * @dev Encodes bytes for RLP
-     * @param value The bytes to encode
-     * @return The RLP encoded bytes
-     */
-    function rlpEncodeBytes(
-        bytes memory value
-    ) internal pure returns (bytes memory) {
-        if (value.length == 1 && uint8(value[0]) < 128) {
-            return value;
-        } else if (value.length < 56) {
-            bytes memory result = new bytes(value.length + 1);
-            result[0] = bytes1(uint8(128 + value.length));
-            for (uint i = 0; i < value.length; i++) {
-                result[i + 1] = value[i];
-            }
-            return result;
-        } else {
-            bytes memory lengthBytes = uintToBytes(value.length);
-            bytes memory result = new bytes(
-                value.length + lengthBytes.length + 1
-            );
-            result[0] = bytes1(uint8(183 + lengthBytes.length));
-            for (uint i = 0; i < lengthBytes.length; i++) {
-                result[i + 1] = lengthBytes[i];
-            }
-            for (uint i = 0; i < value.length; i++) {
-                result[i + lengthBytes.length + 1] = value[i];
-            }
-            return result;
-        }
-    }
-
-    /**
-     * @dev Encodes bytes32 for RLP
-     * @param value The bytes32 to encode
-     * @return The RLP encoded bytes32
-     */
-    function rlpEncodeBytes32(
-        bytes32 value
-    ) internal pure returns (bytes memory) {
-        bytes memory valueBytes = new bytes(32);
-        assembly {
-            mstore(add(valueBytes, 32), value)
-        }
-        return rlpEncodeBytes(valueBytes);
-    }
-
-    /**
-     * @dev Encodes empty bytes for RLP
-     * @return The RLP encoded empty bytes
-     */
-    function rlpEncodeEmptyBytes() internal pure returns (bytes memory) {
-        bytes memory result = new bytes(1);
-        result[0] = 0x80;
-        return result;
-    }
-
-    /**
-     * @dev Encodes a list for RLP
-     * @param elements The list elements to encode
-     * @return The RLP encoded list
-     */
-    function rlpEncodeList(
-        bytes[] memory elements
-    ) internal pure returns (bytes memory) {
-        uint totalLength = 0;
-        for (uint i = 0; i < elements.length; i++) {
-            totalLength += elements[i].length;
-        }
-
-        if (totalLength < 56) {
-            bytes memory result = new bytes(totalLength + 1);
-            result[0] = bytes1(uint8(192 + totalLength));
-            uint position = 1;
-            for (uint i = 0; i < elements.length; i++) {
-                for (uint j = 0; j < elements[i].length; j++) {
-                    result[position] = elements[i][j];
-                    position++;
-                }
-            }
-            return result;
-        } else {
-            bytes memory lengthBytes = uintToBytes(totalLength);
-            bytes memory result = new bytes(
-                totalLength + lengthBytes.length + 1
-            );
-            result[0] = bytes1(uint8(247 + lengthBytes.length));
-            for (uint i = 0; i < lengthBytes.length; i++) {
-                result[i + 1] = lengthBytes[i];
-            }
-            uint position = lengthBytes.length + 1;
-            for (uint i = 0; i < elements.length; i++) {
-                for (uint j = 0; j < elements[i].length; j++) {
-                    result[position] = elements[i][j];
-                    position++;
-                }
-            }
-            return result;
-        }
-    }
-
-    /**
      * @dev Encodes an access list for RLP
-     * @param accessList The access list to encode
-     * @return The RLP encoded access list
+     * @param accessList The access list entries
+     * @return The RLP-encoded access list
      */
-    function rlpEncodeAccessList(
+    function _writeAccessList(
         AccessListEntry[] memory accessList
     ) internal pure returns (bytes memory) {
         bytes[] memory elements = new bytes[](accessList.length);
-
         for (uint i = 0; i < accessList.length; i++) {
-            bytes[] memory entryElements = new bytes[](2);
-            entryElements[0] = rlpEncodeAddress(accessList[i].addr);
+            bytes[] memory entry = new bytes[](2);
+            entry[0] = RLPWriter.writeAddress(accessList[i].addr);
 
-            bytes[] memory storageKeyElements = new bytes[](
-                accessList[i].storageKeys.length
-            );
+            bytes[] memory keys = new bytes[](accessList[i].storageKeys.length);
             for (uint j = 0; j < accessList[i].storageKeys.length; j++) {
-                storageKeyElements[j] = rlpEncodeBytes32(
-                    accessList[i].storageKeys[j]
-                );
+                keys[j] = RLPWriter.writeBytes(abi.encodePacked(accessList[i].storageKeys[j]));
             }
-            entryElements[1] = rlpEncodeList(storageKeyElements);
-
-            elements[i] = rlpEncodeList(entryElements);
+            entry[1] = RLPWriter.writeList(keys);
+            elements[i] = RLPWriter.writeList(entry);
         }
-
-        return rlpEncodeList(elements);
-    }
-
-    /**
-     * @dev Converts a uint to bytes
-     * @param value The uint value to convert
-     * @return The bytes representation
-     */
-    function uintToBytes(uint value) internal pure returns (bytes memory) {
-        if (value == 0) {
-            return new bytes(0);
-        }
-
-        uint tempValue = value;
-        uint length = 0;
-        while (tempValue > 0) {
-            length++;
-            tempValue >>= 8;
-        }
-
-        bytes memory result = new bytes(length);
-        tempValue = value;
-        for (uint i = 0; i < length; i++) {
-            result[length - i - 1] = bytes1(uint8(tempValue & 0xFF));
-            tempValue >>= 8;
-        }
-
-        return result;
+        return RLPWriter.writeList(elements);
     }
 }

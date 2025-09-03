@@ -12,13 +12,14 @@ import {
   encodeFunctionData,
   parseAbi,
 } from "viem";
+import type { Address } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { privateKeyToAccount } from "viem/accounts";
 import { ContractReturnType } from "@nomicfoundation/hardhat-viem/types";
 
 void describe("EVMTxBuilder Comparison with Viem", async function () {
   const TEST_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-  const RECIPIENT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+  const RECIPIENT: Address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
   const { viem } = await network.connect();
   const publicClient = await viem.getPublicClient();
@@ -42,7 +43,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
 
   interface ContractTxParams {
     chainId: bigint;
-    to: Hex;
+    to: Address;
     value: bigint;
     nonce: bigint;
     gasLimit: bigint;
@@ -54,7 +55,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
 
   interface SharedTxInput {
     chainId: number;
-    to: Hex;
+    to: Address;
     value: bigint;
     nonce: number;
     gasLimit: bigint;
@@ -75,7 +76,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     ContractReturnType<"contracts/utils/TestEVMTxBuilder.sol:TestEVMTxBuilder">;
 
   async function buildSharedTxInput(
-    to: Hex,
+    to: Address,
     data: Hex,
     value: bigint,
     gasLimit: bigint,
@@ -186,7 +187,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
   async function buildAndSignTransaction(
     evmTxBuilder: EVMTxBuilderLibraryContract,
     helperContract: TestEVMTxBuilderContract,
-    toAddress: Hex,
+    toAddress: Address,
     inputData: Hex,
     value = 0n,
     gasLimit = DEFAULT_GAS_LIMIT,
@@ -265,11 +266,17 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
       });
 
       const transferAmount = parseEther("10");
-      const transferData = encodeFunctionData({
-        abi: ERC20_ABI,
-        functionName: "transfer",
-        args: [RECIPIENT, transferAmount],
-      });
+
+      // Encode the input data using contract
+      // const transferData = encodeFunctionData({
+      //   abi: ERC20_ABI,
+      //   functionName: "transfer",
+      //   args: [RECIPIENT, transferAmount],
+      // });
+      const transferData = await helperContract.read.encodeErc20TransferInput([
+        RECIPIENT,
+        transferAmount,
+      ]);
 
       const signedEVMTx = await buildAndSignTransaction(
         evmTxBuilder,
