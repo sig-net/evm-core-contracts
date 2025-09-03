@@ -1,6 +1,7 @@
-import { expect } from "chai";
-import hre from "hardhat";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { network } from "hardhat";
+import "@nomicfoundation/hardhat-toolbox-viem";
 import {
   createPublicClient,
   http,
@@ -15,25 +16,17 @@ import {
   createWalletClient,
 } from "viem";
 import { hardhat } from "viem/chains";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { privateKeyToAccount } from "viem/accounts";
-import { secp256k1 } from "@noble/curves/secp256k1";
 
-describe("EVMTxBuilder Comparison with Viem", function () {
+describe("EVMTxBuilder Comparison with Viem", async function () {
   const TEST_PRIVATE_KEY =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-  const testAccount = privateKeyToAccount(TEST_PRIVATE_KEY as `0x${string}`);
   const RECIPIENT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
-  const publicClient = createPublicClient({
-    chain: hardhat,
-    transport: http(),
-  });
-
-  const walletClient = createWalletClient({
-    account: testAccount,
-    chain: hardhat,
-    transport: http(),
-  });
+  const { viem } = await network.connect();
+  const publicClient = await viem.getPublicClient();
+  const [walletClient] = await viem.getWalletClients();
 
   const ERC20_ABI = [
     "function mint(address to, uint256 amount) returns (bool)",
@@ -48,62 +41,35 @@ describe("EVMTxBuilder Comparison with Viem", function () {
   ];
 
   async function deployContracts() {
-    await hre.run("compile");
-
-    const evmTxBuilder = await hre.viem.deployContract(
-      "contracts/EVMTxBuilder/EVMTxBuilder.sol:EVMTxBuilder"
+    const evmTxBuilder = await viem.deployContract(
+      "contracts/libraries/EVMTxBuilder.sol:EVMTxBuilder"
     );
 
-    const helperContract = await hre.viem.deployContract(
-      "./contracts/test/TestEVMTxBuilder.sol:TestEVMTxBuilder",
+    const helperContract = await viem.deployContract(
+      "contracts/utils/TestEVMTxBuilder.sol:TestEVMTxBuilder",
       [],
       {
         libraries: {
-          "contracts/EVMTxBuilder/EVMTxBuilder.sol:EVMTxBuilder":
+          "project/contracts/libraries/EVMTxBuilder.sol:EVMTxBuilder":
             evmTxBuilder.address,
         },
       }
     );
 
-    const erc20Artifact = require(require.resolve(
-      "../artifacts/contracts/test/TestERC20.sol/TestERC20.json"
-    ));
+    const erc20 = await viem.deployContract(
+      "contracts/mocks/TestERC20.sol:TestERC20"
+    );
 
-    const deployHash = await walletClient.deployContract({
-      abi: erc20Artifact.abi,
-      bytecode: erc20Artifact.bytecode as `0x${string}`,
-      account: testAccount.address,
-      gas: 5000000n,
-      args: [],
-    });
-
-    const erc20Receipt = await publicClient.waitForTransactionReceipt({
-      hash: deployHash,
-      timeout: 5000,
-    });
-
-    const nftArtifact = require(require.resolve(
-      "../artifacts/contracts/test/TestERC721.sol/TestERC721.json"
-    ));
-
-    const nftDeployHash = await walletClient.deployContract({
-      abi: nftArtifact.abi,
-      bytecode: nftArtifact.bytecode as `0x${string}`,
-      account: testAccount.address,
-      gas: 5000000n,
-      args: ["TestNFT", "TNFT"],
-    });
-
-    const nftReceipt = await publicClient.waitForTransactionReceipt({
-      hash: nftDeployHash,
-      timeout: 5000,
-    });
+    const nft = await viem.deployContract(
+      "contracts/mocks/TestERC721.sol:TestERC721",
+      ["TestNFT", "TNFT"]
+    );
 
     return {
       evmTxBuilder,
       helperContract,
-      erc20Address: erc20Receipt.contractAddress as `0x${string}`,
-      nftAddress: nftReceipt.contractAddress as `0x${string}`,
+      erc20Address: erc20.address as `0x${string}`,
+      nftAddress: nft.address as `0x${string}`,
     };
   }
 
@@ -117,7 +83,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
   ) {
     const chainId = 31337n;
     const nonce = await publicClient.getTransactionCount({
-      address: testAccount.address,
+      address: walletClient.account.address,
     });
     const maxFeePerGas = 20000000000n;
     const maxPriorityFeePerGas = 1000000000n;
@@ -151,7 +117,8 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       [txParams]
     );
 
-    expect(serializedEVMTx).to.equal(
+    assert.equal(
+      serializedEVMTx,
       serializedViemTx,
       "Serialized transactions should match"
     );
@@ -161,16 +128,19 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       serializedEVMTx,
     ])) as `0x${string}`;
 
-    expect(evmTxHash).to.equal(viemTxHash, "Transaction hashes should match");
+    assert.equal(evmTxHash, viemTxHash, "Transaction hashes should match");
 
     const privateKeyBytes = hexToBytes(TEST_PRIVATE_KEY as `0x${string}`);
     const messageHashBytes = hexToBytes(evmTxHash);
 
-    const signature = secp256k1.sign(messageHashBytes, privateKeyBytes);
-
-    const r = `0x${signature.r.toString(16).padStart(64, "0")}` as Hex;
-    const s = `0x${signature.s.toString(16).padStart(64, "0")}` as Hex;
-    const v = signature.recovery;
+    const sigBytes = secp256k1.sign(messageHashBytes, privateKeyBytes, {
+      prehash: false,
+      format: "recovered",
+    });
+    const sig = secp256k1.Signature.fromBytes(sigBytes, "recovered");
+    const r = `0x${sig.r.toString(16).padStart(64, "0")}` as Hex;
+    const s = `0x${sig.s.toString(16).padStart(64, "0")}` as Hex;
+    const v = sig.recovery as number;
 
     const evmSignature = { v, r, s };
 
@@ -179,12 +149,9 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       evmSignature,
     ])) as Hex;
 
-    const signedViemTx = await walletClient.signTransaction(viemTx);
-
-    expect(signedEVMTx).to.equal(
-      signedViemTx,
-      "Signed transactions should match"
-    );
+    const localAccount = privateKeyToAccount(TEST_PRIVATE_KEY as `0x${string}`);
+    const signedViemTx = await localAccount.signTransaction(viemTx);
+    assert.equal(signedEVMTx, signedViemTx, "Signed transactions should match");
 
     return { signedEVMTx, txParams, signedViemTx };
   }
@@ -201,7 +168,8 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       hash: txHash,
     });
 
-    expect(receipt.status).to.equal(
+    assert.equal(
+      receipt.status,
       "success",
       `${description} should be successful`
     );
@@ -211,9 +179,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
 
   describe("Direct Library Usage", function () {
     it("Should compare transaction building between EVMTxBuilder and viem", async function () {
-      const { helperContract, evmTxBuilder } = await loadFixture(
-        deployContracts
-      );
+      const { helperContract, evmTxBuilder } = await deployContracts();
 
       const recipient = RECIPIENT;
       const value = 12382091830192n;
@@ -238,22 +204,22 @@ describe("EVMTxBuilder Comparison with Viem", function () {
         address: recipient,
       });
 
-      expect(recipientBalanceAfter - recipientBalanceBefore).to.equal(
+      assert.equal(
+        recipientBalanceAfter - recipientBalanceBefore,
         value,
         "Recipient should have received the ETH"
       );
     });
 
     it("Should build and execute ERC20 transfer transaction", async function () {
-      const { helperContract, erc20Address, evmTxBuilder } = await loadFixture(
-        deployContracts
-      );
+      const { helperContract, erc20Address, evmTxBuilder } =
+        await deployContracts();
 
       await walletClient.writeContract({
         address: erc20Address,
         abi: parseAbi(ERC20_ABI),
         functionName: "mint",
-        args: [testAccount.address, parseEther("100")],
+        args: [walletClient.account.address, parseEther("100")],
       });
 
       const transferAmount = parseEther("10");
@@ -275,16 +241,16 @@ describe("EVMTxBuilder Comparison with Viem", function () {
         "ERC20 transfer"
       );
 
-      expect(receipt.blockNumber).to.not.be.undefined;
+      assert.ok(receipt.blockNumber !== undefined);
 
       const balance = await publicClient.readContract({
         address: erc20Address,
         abi: parseAbi(ERC20_ABI),
         functionName: "balanceOf",
-        args: [testAccount.address],
+        args: [walletClient.account.address],
       });
 
-      expect(balance).to.equal(parseEther("90"), "ERC20 balance should be 90");
+      assert.equal(balance, parseEther("90"), "ERC20 balance should be 90");
 
       const recipientBalance = await publicClient.readContract({
         address: erc20Address,
@@ -293,22 +259,22 @@ describe("EVMTxBuilder Comparison with Viem", function () {
         args: [RECIPIENT],
       });
 
-      expect(recipientBalance).to.equal(
+      assert.equal(
+        recipientBalance,
         parseEther("10"),
         "ERC20 balance should be 10"
       );
     });
 
     it("Should build and execute NFT transfer transaction", async function () {
-      const { helperContract, nftAddress, evmTxBuilder } = await loadFixture(
-        deployContracts
-      );
+      const { helperContract, nftAddress, evmTxBuilder } =
+        await deployContracts();
 
       const mintTxHash = await walletClient.writeContract({
         address: nftAddress as `0x${string}`,
         abi: parseAbi(NFT_ABI),
         functionName: "mint",
-        args: [testAccount.address, 2n],
+        args: [walletClient.account.address, 2n],
       });
 
       await publicClient.waitForTransactionReceipt({
@@ -318,7 +284,7 @@ describe("EVMTxBuilder Comparison with Viem", function () {
       const transferData = encodeFunctionData({
         abi: parseAbi(NFT_ABI),
         functionName: "transferFrom",
-        args: [testAccount.address, RECIPIENT, 2n],
+        args: [walletClient.account.address, RECIPIENT, 2n],
       });
 
       const { signedEVMTx } = await buildAndSignTransaction(
@@ -337,7 +303,8 @@ describe("EVMTxBuilder Comparison with Viem", function () {
         args: [2n],
       });
 
-      expect(ownerAfter).to.equal(
+      assert.equal(
+        ownerAfter,
         RECIPIENT,
         "NFT should be owned by the recipient after transfer"
       );

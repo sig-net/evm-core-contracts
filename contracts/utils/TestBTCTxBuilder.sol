@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
-import "../BTCTxBuilder/BTCTxBuilder.sol";
+import "../libraries/BTCTxBuilder.sol";
 
 /**
  * @title TestBTCTxBuilder

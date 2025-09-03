@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
-import "../EVMTxBuilder/EVMTxBuilder.sol";
+import "../libraries/EVMTxBuilder.sol";
 
 /**
  * @title TestEVMTxBuilder

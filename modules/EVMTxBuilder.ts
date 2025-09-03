@@ -9,7 +9,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 const EVMTxBuilderModule = buildModule("EVMTxBuilderModule", (m) => {
   // Deploy the EVMTxBuilder library
   const evmTxBuilder = m.contract(
-    "contracts/EVMTxBuilder/EVMTxBuilder.sol:EVMTxBuilder"
+    "contracts/libraries/EVMTxBuilder.sol:EVMTxBuilder"
   );
 
   // Return all deployed contract instances
