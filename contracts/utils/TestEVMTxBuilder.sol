@@ -11,21 +11,6 @@ contract TestEVMTxBuilder {
     using EVMTxBuilder for *;
 
     /**
-     * @dev A structured representation of a transaction
-     */
-    struct TransactionParams {
-        uint64 chainId;
-        uint64 nonce;
-        address to;
-        bool hasTo;
-        uint128 value;
-        bytes input;
-        uint128 gasLimit;
-        uint128 maxFeePerGas;
-        uint128 maxPriorityFeePerGas;
-    }
-
-    /**
      * @dev Encodes ERC20 transfer input data on-chain
      * @param to Recipient address
      * @param amount Transfer amount
@@ -39,68 +24,33 @@ contract TestEVMTxBuilder {
     }
 
     /**
-     * @dev A structured representation of a signature
-     */
-    struct Signature {
-        uint64 v;
-        bytes32 r;
-        bytes32 s;
-    }
-
-    /**
      * @dev Create an unsigned transaction
-     * @param txParams The transaction parameters
+     * @param evmTx The transaction fields
      * @return The RLP encoded unsigned transaction
      */
     function createUnsignedTransaction(
-        TransactionParams memory txParams
+        EVMTxBuilder.EVMTransaction memory evmTx
     ) public pure returns (bytes memory) {
-        EVMTxBuilder.EVMTransaction memory tx = _buildEvmTransaction(txParams);
-        tx.accessList = new EVMTxBuilder.AccessListEntry[](0);
-
-        return EVMTxBuilder.buildForSigning(tx);
+        // Ensure access list defaults to empty when not provided
+        if (evmTx.accessList.length == 0) {
+            evmTx.accessList = new EVMTxBuilder.AccessListEntry[](0);
+        }
+        return EVMTxBuilder.buildForSigning(evmTx);
     }
 
     /**
      * @dev Create a signed transaction
-     * @param txParams The transaction parameters
+     * @param evmTx The transaction fields
      * @param signature The signature components
      * @return The RLP encoded signed transaction
      */
     function createSignedTransaction(
-        TransactionParams memory txParams,
-        Signature memory signature
+        EVMTxBuilder.EVMTransaction memory evmTx,
+        EVMTxBuilder.Signature memory signature
     ) public pure returns (bytes memory) {
-        EVMTxBuilder.EVMTransaction memory tx = _buildEvmTransaction(txParams);
-        tx.accessList = new EVMTxBuilder.AccessListEntry[](0);
-
-        EVMTxBuilder.Signature memory evmSignature = EVMTxBuilder.Signature({
-            v: signature.v,
-            r: signature.r,
-            s: signature.s
-        });
-
-        return EVMTxBuilder.buildWithSignature(tx, evmSignature);
-    }
-
-    /**
-     * @dev Builds an EVM transaction from transaction parameters
-     */
-    function _buildEvmTransaction(
-        TransactionParams memory txParams
-    ) internal pure returns (EVMTxBuilder.EVMTransaction memory) {
-        EVMTxBuilder.EVMTransaction memory tx;
-
-        tx.chainId = txParams.chainId;
-        tx.nonce = txParams.nonce;
-        tx.to = txParams.to;
-        tx.hasTo = txParams.hasTo;
-        tx.value = txParams.value;
-        tx.input = txParams.input;
-        tx.gasLimit = txParams.gasLimit;
-        tx.maxFeePerGas = txParams.maxFeePerGas;
-        tx.maxPriorityFeePerGas = txParams.maxPriorityFeePerGas;
-
-        return tx;
+        if (evmTx.accessList.length == 0) {
+            evmTx.accessList = new EVMTxBuilder.AccessListEntry[](0);
+        }
+        return EVMTxBuilder.buildWithSignature(evmTx, signature);
     }
 }

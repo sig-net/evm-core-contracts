@@ -1,158 +1,194 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 import {Lib_RLPWriter as RLPWriter} from "@eth-optimism/contracts/libraries/rlp/Lib_RLPWriter.sol";
 
 /**
  * @title EVMTxBuilder
- * @dev Minimal library for building EIP-1559 EVM transactions
+ * @notice Minimal library for building EIP-1559 (type-2) transaction payloads on-chain.
+ * @dev Serialization uses Optimism's Lib_RLPWriter. This library does not sign transactions.
+ * Use {getHashToSign} on the result of {buildForSigning} and sign off-chain.
+ * Only EIP-1559 transactions are supported.
  */
 library EVMTxBuilder {
     uint8 constant EIP_1559_TYPE = 2;
 
+    /**
+     * @dev Access list entry for EIP-2930/EIP-1559 transactions.
+     * @param addr Address whose storage is accessed
+     * @param storageKeys Array of 32-byte storage keys accessed for the address
+     */
     struct AccessListEntry {
         address addr;
         bytes32[] storageKeys;
     }
 
+    /**
+     * @dev Compact signature components used by typed transactions.
+     * @param v y-parity (0 or 1) for EIP-1559
+     * @param r Secp256k1 signature r value
+     * @param s Secp256k1 signature s value
+     */
     struct Signature {
-        uint64 v;
+        uint8 v;
         bytes32 r;
         bytes32 s;
     }
 
+    /**
+     * @dev Representation of an EIP-1559 transaction prior to signing.
+     * @param chainId Chain identifier
+     * @param nonce Sender's nonce
+     * @param to Recipient (omit by setting hasTo=false for contract creation)
+     * @param hasTo Whether the `to` field is present
+     * @param value Native token amount in wei
+     * @param input Calldata bytes
+     * @param gasLimit Maximum gas provided
+     * @param maxFeePerGas Max fee per gas (ceiling)
+     * @param maxPriorityFeePerGas Priority fee per gas (tip)
+     * @param accessList Optional access list entries
+     */
     struct EVMTransaction {
-        uint64 chainId;
-        uint64 nonce;
+        uint256 chainId;
+        uint256 nonce;
         address to;
         bool hasTo;
-        uint128 value;
+        uint256 value;
         bytes input;
-        uint128 gasLimit;
-        uint128 maxFeePerGas;
-        uint128 maxPriorityFeePerGas;
+        uint256 gasLimit;
+        uint256 maxFeePerGas;
+        uint256 maxPriorityFeePerGas;
         AccessListEntry[] accessList;
     }
 
     /**
-     * @dev Builds transaction data for signing
-     * @param tx The transaction to build
-     * @return The RLP encoded transaction data
+     * @notice Builds a type-2 (EIP-1559) transaction payload without a signature.
+     * @param evmTx Transaction fields to serialize
+     * @return RLP-encoded payload prefixed with the EIP-1559 type byte
      */
-    function buildForSigning(EVMTransaction memory tx) public pure returns (bytes memory) {
+    function buildForSigning(EVMTransaction memory evmTx) public pure returns (bytes memory) {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
 
-        bytes memory encodedFields = encodeFields(tx);
+        bytes memory encodedFields = encodeFields(evmTx);
 
         return bytes.concat(result, encodedFields);
     }
 
     /**
-     * @dev Builds transaction data with signature
-     * @param tx The transaction to build
-     * @param signature The signature to include
-     * @return The RLP encoded transaction data with signature
+     * @notice Builds a type-2 (EIP-1559) transaction payload including a compact signature.
+     * @param evmTx Transaction fields to serialize
+     * @param signature Compact signature (y-parity, r, s)
+     * @return RLP-encoded payload prefixed with the EIP-1559 type byte
      */
     function buildWithSignature(
-        EVMTransaction memory tx,
+        EVMTransaction memory evmTx,
         Signature memory signature
     ) public pure returns (bytes memory) {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
 
-        bytes memory encodedFieldsWithSignature = encodeFieldsWithSignature(tx, signature);
+        bytes memory encodedFieldsWithSignature = encodeFieldsWithSignature(evmTx, signature);
 
         return bytes.concat(result, encodedFieldsWithSignature);
     }
 
     /**
-     * @dev Encodes transaction fields for RLP
-     * @param tx The transaction to encode
-     * @return The RLP encoded transaction fields
+     * @dev Encodes the 9 core EIP-1559 fields as a single RLP list.
+     * @param evmTx The transaction to encode
+     * @return RLP-encoded list of core fields
      */
-    function encodeFields(EVMTransaction memory tx) internal pure returns (bytes memory) {
-        bytes[] memory elements = new bytes[](9);
-
-        elements[0] = RLPWriter.writeUint(uint(tx.chainId));
-        elements[1] = RLPWriter.writeUint(uint(tx.nonce));
-        elements[2] = RLPWriter.writeUint(uint(tx.maxPriorityFeePerGas));
-        elements[3] = RLPWriter.writeUint(uint(tx.maxFeePerGas));
-        elements[4] = RLPWriter.writeUint(uint(tx.gasLimit));
-
-        if (tx.hasTo) {
-            elements[5] = RLPWriter.writeAddress(tx.to);
-        } else {
-            elements[5] = RLPWriter.writeBytes("");
-        }
-
-        elements[6] = RLPWriter.writeUint(uint(tx.value));
-        elements[7] = RLPWriter.writeBytes(tx.input);
-        elements[8] = _writeAccessList(tx.accessList);
-
-        return RLPWriter.writeList(elements);
+    function encodeFields(EVMTransaction memory evmTx) internal pure returns (bytes memory) {
+        return RLPWriter.writeList(_coreElements(evmTx));
     }
 
     /**
-     * @dev Encodes transaction fields with signature for RLP
-     * @param tx The transaction to encode
+     * @dev Encodes the 9 core fields plus the compact signature as a single RLP list.
+     * @param evmTx The transaction to encode
      * @param signature The signature to include
-     * @return The RLP encoded transaction fields with signature
+     * @return RLP-encoded list of core fields plus signature
      */
     function encodeFieldsWithSignature(
-        EVMTransaction memory tx,
+        EVMTransaction memory evmTx,
         Signature memory signature
     ) internal pure returns (bytes memory) {
+        bytes[] memory base = _coreElements(evmTx);
         bytes[] memory elements = new bytes[](12);
-
-        elements[0] = RLPWriter.writeUint(uint(tx.chainId));
-        elements[1] = RLPWriter.writeUint(uint(tx.nonce));
-        elements[2] = RLPWriter.writeUint(uint(tx.maxPriorityFeePerGas));
-        elements[3] = RLPWriter.writeUint(uint(tx.maxFeePerGas));
-        elements[4] = RLPWriter.writeUint(uint(tx.gasLimit));
-
-        if (tx.hasTo) {
-            elements[5] = RLPWriter.writeAddress(tx.to);
-        } else {
-            elements[5] = RLPWriter.writeBytes("");
+        for (uint i = 0; i < base.length; ) {
+            elements[i] = base[i];
+            unchecked {
+                ++i;
+            }
         }
-
-        elements[6] = RLPWriter.writeUint(uint(tx.value));
-        elements[7] = RLPWriter.writeBytes(tx.input);
-        elements[8] = _writeAccessList(tx.accessList);
         elements[9] = RLPWriter.writeUint(uint(signature.v));
         elements[10] = RLPWriter.writeBytes(abi.encodePacked(signature.r));
         elements[11] = RLPWriter.writeBytes(abi.encodePacked(signature.s));
-
         return RLPWriter.writeList(elements);
     }
 
     /**
-     * @dev Get the hash of a transaction for signing
-     * @param txBytes The RLP encoded transaction
-     * @return The keccak256 hash that should be signed
+     * @dev Produces the 9 core EIP-1559 transaction fields as RLP elements.
+     * @param evmTx Transaction fields to serialize
+     * @return elements Array of 9 RLP-encoded core fields
+     */
+    function _coreElements(
+        EVMTransaction memory evmTx
+    ) internal pure returns (bytes[] memory elements) {
+        elements = new bytes[](9);
+        elements[0] = RLPWriter.writeUint(uint(evmTx.chainId));
+        elements[1] = RLPWriter.writeUint(uint(evmTx.nonce));
+        elements[2] = RLPWriter.writeUint(uint(evmTx.maxPriorityFeePerGas));
+        elements[3] = RLPWriter.writeUint(uint(evmTx.maxFeePerGas));
+        elements[4] = RLPWriter.writeUint(uint(evmTx.gasLimit));
+        if (evmTx.hasTo) {
+            elements[5] = RLPWriter.writeAddress(evmTx.to);
+        } else {
+            elements[5] = RLPWriter.writeBytes("");
+        }
+        elements[6] = RLPWriter.writeUint(uint(evmTx.value));
+        elements[7] = RLPWriter.writeBytes(evmTx.input);
+        elements[8] = _writeAccessList(evmTx.accessList);
+        return elements;
+    }
+
+    /**
+     * @notice Computes the keccak256 hash of the provided transaction bytes.
+     * @dev Pass the output of {buildForSigning} here to obtain the digest for off-chain signing.
+     * @param txBytes RLP-encoded transaction bytes (including type byte)
+     * @return digest The 32-byte keccak256 hash to sign
      */
     function getHashToSign(bytes memory txBytes) public pure returns (bytes32) {
         return keccak256(txBytes);
     }
 
     /**
-     * @dev Encodes an access list for RLP
-     * @param accessList The access list entries
-     * @return The RLP-encoded access list
+     * @dev Encodes an access list as per EIP-2930/EIP-1559.
+     * @param accessList Array of entries, each with an address and storage keys
+     * @return Encoded RLP list for the access list
      */
     function _writeAccessList(
         AccessListEntry[] memory accessList
     ) internal pure returns (bytes memory) {
+        if (accessList.length == 0) {
+            bytes[] memory empty = new bytes[](0);
+            return RLPWriter.writeList(empty);
+        }
         bytes[] memory elements = new bytes[](accessList.length);
-        for (uint i = 0; i < accessList.length; i++) {
+        for (uint i = 0; i < accessList.length; ) {
             bytes[] memory entry = new bytes[](2);
             entry[0] = RLPWriter.writeAddress(accessList[i].addr);
 
             bytes[] memory keys = new bytes[](accessList[i].storageKeys.length);
-            for (uint j = 0; j < accessList[i].storageKeys.length; j++) {
+            for (uint j = 0; j < accessList[i].storageKeys.length; ) {
                 keys[j] = RLPWriter.writeBytes(abi.encodePacked(accessList[i].storageKeys[j]));
+                unchecked {
+                    ++j;
+                }
             }
             entry[1] = RLPWriter.writeList(keys);
             elements[i] = RLPWriter.writeList(entry);
+            unchecked {
+                ++i;
+            }
         }
         return RLPWriter.writeList(elements);
     }

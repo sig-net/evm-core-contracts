@@ -41,16 +41,22 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     "function transferFrom(address from, address to, uint256 tokenId)",
   ]);
 
-  interface ContractTxParams {
+  interface AccessListEntry {
+    addr: Address;
+    storageKeys: `0x${string}`[];
+  }
+
+  interface EvmTx {
     chainId: bigint;
-    to: Address;
-    value: bigint;
     nonce: bigint;
+    to: Address;
+    hasTo: boolean;
+    value: bigint;
+    input: Hex;
     gasLimit: bigint;
     maxFeePerGas: bigint;
     maxPriorityFeePerGas: bigint;
-    input: Hex;
-    hasTo: boolean;
+    accessList: AccessListEntry[];
   }
 
   interface SharedTxInput {
@@ -65,9 +71,9 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
   }
 
   interface Signature {
-    v: bigint;
-    r: Hex;
-    s: Hex;
+    v: number;
+    r: `0x${string}`;
+    s: `0x${string}`;
   }
 
   type EVMTxBuilderLibraryContract =
@@ -109,17 +115,18 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     };
   }
 
-  function toContractTxParams(input: SharedTxInput): ContractTxParams {
+  function toEvmTx(input: SharedTxInput): EvmTx {
     return {
       chainId: BigInt(input.chainId),
-      to: input.to,
-      value: input.value,
       nonce: BigInt(input.nonce),
+      to: input.to,
+      hasTo: true,
+      value: input.value,
+      input: input.data,
       gasLimit: input.gasLimit,
       maxFeePerGas: input.maxFeePerGas,
       maxPriorityFeePerGas: input.maxPriorityFeePerGas,
-      input: input.data,
-      hasTo: true,
+      accessList: [],
     };
   }
 
@@ -136,22 +143,24 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     libraryContract: EVMTxBuilderLibraryContract,
     helperContract: TestEVMTxBuilderContract,
   ) {
-    const params = toContractTxParams(input);
-    const serializedContract = await helperContract.read.createUnsignedTransaction([params]);
+    const evmTx = toEvmTx(input);
+    const serializedContract = await helperContract.read.createUnsignedTransaction([evmTx]);
     const hashContract = await libraryContract.read.getHashToSign([serializedContract]);
-    const signature = (function () {
+    const signature: Signature = (function () {
       const pk = hexToBytes(TEST_PRIVATE_KEY as Hex);
       const msg = hexToBytes(hashContract);
       const bytes = secp256k1.sign(msg, pk, { prehash: false, format: "recovered" });
       const sig = secp256k1.Signature.fromBytes(bytes, "recovered");
+      const r: `0x${string}` = `0x${sig.r.toString(16).padStart(64, "0")}`;
+      const s: `0x${string}` = `0x${sig.s.toString(16).padStart(64, "0")}`;
       return {
-        v: BigInt(sig.recovery ?? 0),
-        r: `0x${sig.r.toString(16).padStart(64, "0")}`,
-        s: `0x${sig.s.toString(16).padStart(64, "0")}`,
-      } as Signature;
+        v: Number(sig.recovery ?? 0),
+        r,
+        s,
+      };
     })();
-    const signedContract = await helperContract.read.createSignedTransaction([params, signature]);
-    return { serializedContract, hashContract, signedContract, params };
+    const signedContract = await helperContract.read.createSignedTransaction([evmTx, signature]);
+    return { serializedContract, hashContract, signedContract, params: evmTx };
   }
 
   async function deployContracts() {
