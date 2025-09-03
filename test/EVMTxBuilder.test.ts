@@ -14,8 +14,9 @@ import {
 } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { privateKeyToAccount } from "viem/accounts";
+import { ContractReturnType } from "@nomicfoundation/hardhat-viem/types";
 
-describe("EVMTxBuilder Comparison with Viem", async function () {
+void describe("EVMTxBuilder Comparison with Viem", async function () {
   const TEST_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
   const RECIPIENT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
@@ -38,6 +39,119 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
     "function ownerOf(uint256 tokenId) view returns (address)",
     "function transferFrom(address from, address to, uint256 tokenId)",
   ]);
+
+  interface ContractTxParams {
+    chainId: bigint;
+    to: Hex;
+    value: bigint;
+    nonce: bigint;
+    gasLimit: bigint;
+    maxFeePerGas: bigint;
+    maxPriorityFeePerGas: bigint;
+    input: Hex;
+    hasTo: boolean;
+  }
+
+  interface SharedTxInput {
+    chainId: number;
+    to: Hex;
+    value: bigint;
+    nonce: number;
+    gasLimit: bigint;
+    maxFeePerGas: bigint;
+    maxPriorityFeePerGas: bigint;
+    data: Hex;
+  }
+
+  interface Signature {
+    v: bigint;
+    r: Hex;
+    s: Hex;
+  }
+
+  type EVMTxBuilderLibraryContract =
+    ContractReturnType<"contracts/libraries/EVMTxBuilder.sol:EVMTxBuilder">;
+  type TestEVMTxBuilderContract =
+    ContractReturnType<"contracts/utils/TestEVMTxBuilder.sol:TestEVMTxBuilder">;
+
+  async function buildSharedTxInput(
+    to: Hex,
+    data: Hex,
+    value: bigint,
+    gasLimit: bigint,
+  ): Promise<SharedTxInput> {
+    const chainId = await publicClient.getChainId();
+    const nonce = await publicClient.getTransactionCount({ address: walletClient.account.address });
+    return {
+      chainId,
+      to,
+      value,
+      nonce: Number(nonce),
+      gasLimit,
+      maxFeePerGas: DEFAULT_MAX_FEE_PER_GAS,
+      maxPriorityFeePerGas: DEFAULT_MAX_PRIORITY_FEE_PER_GAS,
+      data,
+    };
+  }
+
+  function toViemTransaction(input: SharedTxInput): TransactionSerializable {
+    return {
+      chainId: input.chainId,
+      to: input.to,
+      value: input.value,
+      nonce: input.nonce,
+      gas: input.gasLimit,
+      maxFeePerGas: input.maxFeePerGas,
+      maxPriorityFeePerGas: input.maxPriorityFeePerGas,
+      data: input.data,
+      type: "eip1559",
+    };
+  }
+
+  function toContractTxParams(input: SharedTxInput): ContractTxParams {
+    return {
+      chainId: BigInt(input.chainId),
+      to: input.to,
+      value: input.value,
+      nonce: BigInt(input.nonce),
+      gasLimit: input.gasLimit,
+      maxFeePerGas: input.maxFeePerGas,
+      maxPriorityFeePerGas: input.maxPriorityFeePerGas,
+      input: input.data,
+      hasTo: true,
+    };
+  }
+
+  async function processViemTx(input: SharedTxInput) {
+    const viemTx = toViemTransaction(input);
+    const serializedViem = serializeTransaction(viemTx);
+    const hashViem = keccak256(serializedViem);
+    const signedViem = await privateKeyToAccount(TEST_PRIVATE_KEY as Hex).signTransaction(viemTx);
+    return { serializedViem, hashViem, signedViem };
+  }
+
+  async function processContractTx(
+    input: SharedTxInput,
+    libraryContract: EVMTxBuilderLibraryContract,
+    helperContract: TestEVMTxBuilderContract,
+  ) {
+    const params = toContractTxParams(input);
+    const serializedContract = await helperContract.read.createUnsignedTransaction([params]);
+    const hashContract = await libraryContract.read.getHashToSign([serializedContract]);
+    const signature = (function () {
+      const pk = hexToBytes(TEST_PRIVATE_KEY as Hex);
+      const msg = hexToBytes(hashContract);
+      const bytes = secp256k1.sign(msg, pk, { prehash: false, format: "recovered" });
+      const sig = secp256k1.Signature.fromBytes(bytes, "recovered");
+      return {
+        v: BigInt(sig.recovery ?? 0),
+        r: `0x${sig.r.toString(16).padStart(64, "0")}`,
+        s: `0x${sig.s.toString(16).padStart(64, "0")}`,
+      } as Signature;
+    })();
+    const signedContract = await helperContract.read.createSignedTransaction([params, signature]);
+    return { serializedContract, hashContract, signedContract, params };
+  }
 
   async function deployContracts() {
     const evmTxBuilder = await viem.deployContract(
@@ -64,80 +178,32 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
     return {
       evmTxBuilder,
       helperContract,
-      erc20Address: erc20.address as `0x${string}`,
-      nftAddress: nft.address as `0x${string}`,
+      erc20Address: erc20.address,
+      nftAddress: nft.address,
     };
   }
 
   async function buildAndSignTransaction(
-    evmTxBuilder: any,
-    helperContract: any,
-    toAddress: `0x${string}`,
+    evmTxBuilder: EVMTxBuilderLibraryContract,
+    helperContract: TestEVMTxBuilderContract,
+    toAddress: Hex,
     inputData: Hex,
     value = 0n,
     gasLimit = DEFAULT_GAS_LIMIT,
   ) {
-    const chainId = await publicClient.getChainId();
-    const nonce = await publicClient.getTransactionCount({ address: walletClient.account.address });
+    const shared = await buildSharedTxInput(toAddress, inputData, value, gasLimit);
+    const { serializedViem, hashViem, signedViem } = await processViemTx(shared);
+    const { serializedContract, hashContract, signedContract } = await processContractTx(
+      shared,
+      evmTxBuilder,
+      helperContract,
+    );
 
-    const viemTx: TransactionSerializable = {
-      chainId,
-      to: toAddress,
-      value,
-      nonce,
-      gas: gasLimit,
-      maxFeePerGas: DEFAULT_MAX_FEE_PER_GAS,
-      maxPriorityFeePerGas: DEFAULT_MAX_PRIORITY_FEE_PER_GAS,
-      data: inputData,
-      type: "eip1559",
-    };
+    assert.equal(serializedContract, serializedViem, "Serialized transactions should match");
+    assert.equal(hashContract, hashViem, "Transaction hashes should match");
+    assert.equal(signedContract, signedViem, "Signed transactions should match");
 
-    const txParams = {
-      chainId,
-      nonce: Number(nonce),
-      to: toAddress,
-      hasTo: true,
-      value,
-      input: inputData,
-      gasLimit,
-      maxFeePerGas: DEFAULT_MAX_FEE_PER_GAS,
-      maxPriorityFeePerGas: DEFAULT_MAX_PRIORITY_FEE_PER_GAS,
-    };
-
-    const serializedViemTx = serializeTransaction(viemTx);
-    const serializedEVMTx = await helperContract.read.createUnsignedTransaction([txParams]);
-
-    assert.equal(serializedEVMTx, serializedViemTx, "Serialized transactions should match");
-
-    const viemTxHash = keccak256(serializedViemTx);
-    const evmTxHash = (await evmTxBuilder.read.getHashToSign([serializedEVMTx])) as `0x${string}`;
-
-    assert.equal(evmTxHash, viemTxHash, "Transaction hashes should match");
-
-    const privateKeyBytes = hexToBytes(TEST_PRIVATE_KEY as `0x${string}`);
-    const messageHashBytes = hexToBytes(evmTxHash);
-
-    const sigBytes = secp256k1.sign(messageHashBytes, privateKeyBytes, {
-      prehash: false,
-      format: "recovered",
-    });
-    const sig = secp256k1.Signature.fromBytes(sigBytes, "recovered");
-    const r = `0x${sig.r.toString(16).padStart(64, "0")}` as Hex;
-    const s = `0x${sig.s.toString(16).padStart(64, "0")}` as Hex;
-    const v = sig.recovery as number;
-
-    const evmSignature = { v, r, s };
-
-    const signedEVMTx = (await helperContract.read.createSignedTransaction([
-      txParams,
-      evmSignature,
-    ])) as Hex;
-
-    const localAccount = privateKeyToAccount(TEST_PRIVATE_KEY as `0x${string}`);
-    const signedViemTx = await localAccount.signTransaction(viemTx);
-    assert.equal(signedEVMTx, signedViemTx, "Signed transactions should match");
-
-    return { signedEVMTx, txParams, signedViemTx };
+    return signedContract;
   }
 
   async function executeAndVerifyTransaction(signedEVMTx: Hex, description: string) {
@@ -154,8 +220,8 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
     return receipt;
   }
 
-  describe("Direct Library Usage", function () {
-    it("Should compare transaction building between EVMTxBuilder and viem", async function () {
+  void describe("Direct Library Usage", function () {
+    void it("Should compare transaction building between EVMTxBuilder and viem", async function () {
       const { helperContract, evmTxBuilder } = await deployContracts();
 
       const recipient = RECIPIENT;
@@ -166,7 +232,7 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
         address: recipient,
       });
 
-      const { signedEVMTx } = await buildAndSignTransaction(
+      const signedEVMTx = await buildAndSignTransaction(
         evmTxBuilder,
         helperContract,
         recipient,
@@ -188,7 +254,7 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
       );
     });
 
-    it("Should build and execute ERC20 transfer transaction", async function () {
+    void it("Should build and execute ERC20 transfer transaction", async function () {
       const { helperContract, erc20Address, evmTxBuilder } = await deployContracts();
 
       await walletClient.writeContract({
@@ -205,7 +271,7 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
         args: [RECIPIENT, transferAmount],
       });
 
-      const { signedEVMTx } = await buildAndSignTransaction(
+      const signedEVMTx = await buildAndSignTransaction(
         evmTxBuilder,
         helperContract,
         erc20Address,
@@ -235,11 +301,11 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
       assert.equal(recipientBalance, parseEther("10"), "ERC20 balance should be 10");
     });
 
-    it("Should build and execute NFT transfer transaction", async function () {
+    void it("Should build and execute NFT transfer transaction", async function () {
       const { helperContract, nftAddress, evmTxBuilder } = await deployContracts();
 
       const mintTxHash = await walletClient.writeContract({
-        address: nftAddress as `0x${string}`,
+        address: nftAddress,
         abi: NFT_ABI,
         functionName: "mint",
         args: [walletClient.account.address, 2n],
@@ -255,17 +321,17 @@ describe("EVMTxBuilder Comparison with Viem", async function () {
         args: [walletClient.account.address, RECIPIENT, 2n],
       });
 
-      const { signedEVMTx } = await buildAndSignTransaction(
+      const signedEVMTx = await buildAndSignTransaction(
         evmTxBuilder,
         helperContract,
-        nftAddress as `0x${string}`,
+        nftAddress,
         transferData,
       );
 
       await executeAndVerifyTransaction(signedEVMTx, "NFT transfer");
 
       const ownerAfter = await publicClient.readContract({
-        address: nftAddress as `0x${string}`,
+        address: nftAddress,
         abi: NFT_ABI,
         functionName: "ownerOf",
         args: [2n],
