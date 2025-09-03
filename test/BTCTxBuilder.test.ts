@@ -3,5 +3,7 @@
 import { describe, it } from "node:test";
 
 describe("BTCTxBuilder Integration Tests (disabled)", () => {
-  it("skipped", () => {});
+  it("skipped", () => {
+    // intentionally empty
+  });
 });
