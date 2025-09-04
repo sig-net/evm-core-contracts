@@ -25,9 +25,9 @@ Exports:
 
 - `struct EVMTransaction` — full transaction fields (EIP-1559)
 - `struct Signature { uint8 v; bytes32 r; bytes32 s; }` — compact y-parity signature
-- `function buildForSigning(EVMTransaction memory) returns (bytes)` — unsigned bytes
-- `function buildWithSignature(EVMTransaction memory, Signature memory) returns (bytes)` — signed bytes
-- `function getHashToSign(bytes memory) returns (bytes32)` — digest for off-chain signing
+- `function serializeEvmTxUnsigned(EVMTransaction)` — unsigned bytes
+- `function serializeEvmTxWithSignature(EVMTransaction, Signature)` — signed bytes
+- `function hashEvmTx(bytes)` — digest for off-chain signing
 
 ## Usage example (via helper contract)
 

@@ -6,7 +6,7 @@ import {Lib_RLPWriter as RLPWriter} from "@eth-optimism/contracts/libraries/rlp/
  * @title EVMTxBuilder
  * @notice Minimal library for building EIP-1559 (type-2) transaction payloads on-chain.
  * @dev Serialization uses Optimism's Lib_RLPWriter. This library does not sign transactions.
- * Use {getHashToSign} on the result of {buildForSigning} and sign off-chain.
+ * Use {hashEvmTx} on the result of {serializeEvmTxUnsigned} and sign off-chain.
  * Only EIP-1559 transactions are supported.
  */
 library EVMTxBuilder {
@@ -61,11 +61,13 @@ library EVMTxBuilder {
     }
 
     /**
-     * @notice Builds a type-2 (EIP-1559) transaction payload without a signature.
+     * @notice Serializes an EIP-1559 transaction without a signature.
      * @param evmTx Transaction fields to serialize
      * @return RLP-encoded payload prefixed with the EIP-1559 type byte
      */
-    function buildForSigning(EVMTransaction memory evmTx) public pure returns (bytes memory) {
+    function serializeEvmTxUnsigned(
+        EVMTransaction memory evmTx
+    ) internal pure returns (bytes memory) {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
 
@@ -75,15 +77,15 @@ library EVMTxBuilder {
     }
 
     /**
-     * @notice Builds a type-2 (EIP-1559) transaction payload including a compact signature.
+     * @notice Serializes an EIP-1559 transaction and appends a compact signature.
      * @param evmTx Transaction fields to serialize
      * @param signature Compact signature (y-parity, r, s)
      * @return RLP-encoded payload prefixed with the EIP-1559 type byte
      */
-    function buildWithSignature(
+    function serializeEvmTxWithSignature(
         EVMTransaction memory evmTx,
         Signature memory signature
-    ) public pure returns (bytes memory) {
+    ) internal pure returns (bytes memory) {
         bytes memory result = new bytes(1);
         result[0] = bytes1(EIP_1559_TYPE);
 
@@ -151,12 +153,12 @@ library EVMTxBuilder {
     }
 
     /**
-     * @notice Computes the keccak256 hash of the provided transaction bytes.
-     * @dev Pass the output of {buildForSigning} here to obtain the digest for off-chain signing.
+     * @notice Computes the keccak256 hash of serialized transaction bytes.
+     * @dev Pass the output of {serializeEvmTxUnsigned} here to obtain the digest for off-chain signing.
      * @param txBytes RLP-encoded transaction bytes (including type byte)
      * @return digest The 32-byte keccak256 hash to sign
      */
-    function getHashToSign(bytes memory txBytes) public pure returns (bytes32) {
+    function hashEvmTx(bytes memory txBytes) internal pure returns (bytes32) {
         return keccak256(txBytes);
     }
 

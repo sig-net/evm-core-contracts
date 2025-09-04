@@ -41,24 +41,6 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     "function transferFrom(address from, address to, uint256 tokenId)",
   ]);
 
-  interface AccessListEntry {
-    addr: Address;
-    storageKeys: `0x${string}`[];
-  }
-
-  interface EvmTx {
-    chainId: bigint;
-    nonce: bigint;
-    to: Address;
-    hasTo: boolean;
-    value: bigint;
-    input: Hex;
-    gasLimit: bigint;
-    maxFeePerGas: bigint;
-    maxPriorityFeePerGas: bigint;
-    accessList: AccessListEntry[];
-  }
-
   interface SharedTxInput {
     chainId: number;
     to: Address;
@@ -70,16 +52,11 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     data: Hex;
   }
 
-  interface Signature {
-    v: number;
-    r: `0x${string}`;
-    s: `0x${string}`;
-  }
-
-  type EVMTxBuilderLibraryContract =
-    ContractReturnType<"contracts/libraries/EVMTxBuilder.sol:EVMTxBuilder">;
   type TestEVMTxBuilderContract =
     ContractReturnType<"contracts/utils/TestEVMTxBuilder.sol:TestEVMTxBuilder">;
+
+  type EvmTx = Parameters<TestEVMTxBuilderContract["read"]["createUnsignedTransaction"]>[0][0];
+  type Signature = Parameters<TestEVMTxBuilderContract["read"]["createSignedTransaction"]>[0][1];
 
   async function buildSharedTxInput(
     to: Address,
@@ -115,7 +92,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     };
   }
 
-  function toEvmTx(input: SharedTxInput): EvmTx {
+  function toContractEvmTx(input: SharedTxInput): EvmTx {
     return {
       chainId: BigInt(input.chainId),
       nonce: BigInt(input.nonce),
@@ -138,14 +115,13 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     return { serializedViem, hashViem, signedViem };
   }
 
-  async function processContractTx(
-    input: SharedTxInput,
-    libraryContract: EVMTxBuilderLibraryContract,
-    helperContract: TestEVMTxBuilderContract,
-  ) {
-    const evmTx = toEvmTx(input);
-    const serializedContract = await helperContract.read.createUnsignedTransaction([evmTx]);
-    const hashContract = await libraryContract.read.getHashToSign([serializedContract]);
+  async function processContractTx(input: SharedTxInput, helperContract: TestEVMTxBuilderContract) {
+    const contractEvmTx = toContractEvmTx(input);
+
+    const hashContract: Hex = await helperContract.read.serializeAndHashEvmTx([contractEvmTx]);
+    const serializedContract: Hex = await helperContract.read.createUnsignedTransaction([
+      contractEvmTx,
+    ]);
     const signature: Signature = (function () {
       const pk = hexToBytes(TEST_PRIVATE_KEY as Hex);
       const msg = hexToBytes(hashContract);
@@ -159,23 +135,17 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
         s,
       };
     })();
-    const signedContract = await helperContract.read.createSignedTransaction([evmTx, signature]);
-    return { serializedContract, hashContract, signedContract, params: evmTx };
+    const signedContract: Hex = await helperContract.read.createSignedTransaction([
+      contractEvmTx,
+      signature,
+    ]);
+    return { serializedContract, hashContract, signedContract };
   }
 
   async function deployContracts() {
-    const evmTxBuilder = await viem.deployContract(
-      "contracts/libraries/EVMTxBuilder.sol:EVMTxBuilder",
-    );
-
     const helperContract = await viem.deployContract(
       "contracts/utils/TestEVMTxBuilder.sol:TestEVMTxBuilder",
       [],
-      {
-        libraries: {
-          "project/contracts/libraries/EVMTxBuilder.sol:EVMTxBuilder": evmTxBuilder.address,
-        },
-      },
     );
 
     const erc20 = await viem.deployContract("contracts/mocks/TestERC20.sol:TestERC20");
@@ -186,7 +156,6 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     ]);
 
     return {
-      evmTxBuilder,
       helperContract,
       erc20Address: erc20.address,
       nftAddress: nft.address,
@@ -194,7 +163,6 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
   }
 
   async function buildAndSignTransaction(
-    evmTxBuilder: EVMTxBuilderLibraryContract,
     helperContract: TestEVMTxBuilderContract,
     toAddress: Address,
     inputData: Hex,
@@ -205,7 +173,6 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
     const { serializedViem, hashViem, signedViem } = await processViemTx(shared);
     const { serializedContract, hashContract, signedContract } = await processContractTx(
       shared,
-      evmTxBuilder,
       helperContract,
     );
 
@@ -232,7 +199,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
 
   void describe("Direct Library Usage", function () {
     void it("Should compare transaction building between EVMTxBuilder and viem", async function () {
-      const { helperContract, evmTxBuilder } = await deployContracts();
+      const { helperContract } = await deployContracts();
 
       const recipient = RECIPIENT;
       const value = 12382091830192n;
@@ -243,7 +210,6 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
       });
 
       const signedEVMTx = await buildAndSignTransaction(
-        evmTxBuilder,
         helperContract,
         recipient,
         input,
@@ -264,8 +230,8 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
       );
     });
 
-    void it("Should build and execute ERC20 transfer transaction", async function () {
-      const { helperContract, erc20Address, evmTxBuilder } = await deployContracts();
+    void it("Should build and execute ERC20 transfer transaction, abi encode on contract", async function () {
+      const { helperContract, erc20Address } = await deployContracts();
 
       await walletClient.writeContract({
         address: erc20Address,
@@ -287,12 +253,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
         transferAmount,
       ]);
 
-      const signedEVMTx = await buildAndSignTransaction(
-        evmTxBuilder,
-        helperContract,
-        erc20Address,
-        transferData,
-      );
+      const signedEVMTx = await buildAndSignTransaction(helperContract, erc20Address, transferData);
 
       const receipt = await executeAndVerifyTransaction(signedEVMTx, "ERC20 transfer");
 
@@ -317,8 +278,8 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
       assert.equal(recipientBalance, parseEther("10"), "ERC20 balance should be 10");
     });
 
-    void it("Should build and execute NFT transfer transaction", async function () {
-      const { helperContract, nftAddress, evmTxBuilder } = await deployContracts();
+    void it("Should build and execute NFT transfer transaction, abi encode with viem", async function () {
+      const { helperContract, nftAddress } = await deployContracts();
 
       const mintTxHash = await walletClient.writeContract({
         address: nftAddress,
@@ -337,12 +298,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
         args: [walletClient.account.address, RECIPIENT, 2n],
       });
 
-      const signedEVMTx = await buildAndSignTransaction(
-        evmTxBuilder,
-        helperContract,
-        nftAddress,
-        transferData,
-      );
+      const signedEVMTx = await buildAndSignTransaction(helperContract, nftAddress, transferData);
 
       await executeAndVerifyTransaction(signedEVMTx, "NFT transfer");
 

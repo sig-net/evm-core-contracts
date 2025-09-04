@@ -35,7 +35,7 @@ contract TestEVMTxBuilder {
         if (evmTx.accessList.length == 0) {
             evmTx.accessList = new EVMTxBuilder.AccessListEntry[](0);
         }
-        return EVMTxBuilder.buildForSigning(evmTx);
+        return EVMTxBuilder.serializeEvmTxUnsigned(evmTx);
     }
 
     /**
@@ -51,6 +51,21 @@ contract TestEVMTxBuilder {
         if (evmTx.accessList.length == 0) {
             evmTx.accessList = new EVMTxBuilder.AccessListEntry[](0);
         }
-        return EVMTxBuilder.buildWithSignature(evmTx, signature);
+        return EVMTxBuilder.serializeEvmTxWithSignature(evmTx, signature);
+    }
+
+    /**
+     * @dev Serialize and hash an unsigned EIP-1559 transaction.
+     * @param evmTx The transaction fields
+     * @return digest Keccak256 hash of the serialized tx
+     */
+    function serializeAndHashEvmTx(
+        EVMTxBuilder.EVMTransaction memory evmTx
+    ) public pure returns (bytes32 digest) {
+        if (evmTx.accessList.length == 0) {
+            evmTx.accessList = new EVMTxBuilder.AccessListEntry[](0);
+        }
+        bytes memory serialized = EVMTxBuilder.serializeEvmTxUnsigned(evmTx);
+        digest = EVMTxBuilder.hashEvmTx(serialized);
     }
 }
