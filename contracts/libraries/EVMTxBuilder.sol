@@ -82,7 +82,7 @@ library EVMTxBuilder {
      * @param signature Compact signature (y-parity, r, s)
      * @return RLP-encoded payload prefixed with the EIP-1559 type byte
      */
-    function serializeEvmTxWithSignature(
+    function serializeEvmTxSigned(
         EVMTransaction memory evmTx,
         Signature memory signature
     ) internal pure returns (bytes memory) {

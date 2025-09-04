@@ -1,8 +1,11 @@
 import type { HardhatUserConfig } from "hardhat/config";
+import * as dotenv from "dotenv";
 
 import hardhatToolboxViemPlugin from "@nomicfoundation/hardhat-toolbox-viem";
 import "@nomicfoundation/hardhat-viem";
-import { configVariable } from "hardhat/config";
+import "@nomicfoundation/hardhat-verify";
+
+dotenv.config();
 
 const config: HardhatUserConfig = {
   plugins: [hardhatToolboxViemPlugin],
@@ -35,15 +38,19 @@ const config: HardhatUserConfig = {
       type: "edr-simulated",
       chainType: "l1",
     },
-    hardhatOp: {
-      type: "edr-simulated",
-      chainType: "op",
-    },
     sepolia: {
       type: "http",
       chainType: "l1",
-      url: configVariable("SEPOLIA_RPC_URL"),
-      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
+      url: process.env.SEPOLIA_RPC_URL ?? "",
+      accounts: process.env.SEPOLIA_PRIVATE_KEY ? [process.env.SEPOLIA_PRIVATE_KEY] : [],
+    },
+  },
+  verify: {
+    etherscan: {
+      apiKey: process.env.ETHERSCAN_API_KEY ?? "",
+    },
+    blockscout: {
+      enabled: true,
     },
   },
 };

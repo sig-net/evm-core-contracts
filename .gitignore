@@ -18,3 +18,13 @@
 
 # Hardhat coverage reports
 /coverage
+
+# Hardhat Ignition deployments
+/ignition/deployments
+
+# Environment variables
+.env
+.env.local
+
+# TypeScript generated files
+/typechain-types

@@ -55,8 +55,8 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
   type TestEVMTxBuilderContract =
     ContractReturnType<"contracts/utils/TestEVMTxBuilder.sol:TestEVMTxBuilder">;
 
-  type EvmTx = Parameters<TestEVMTxBuilderContract["read"]["createUnsignedTransaction"]>[0][0];
-  type Signature = Parameters<TestEVMTxBuilderContract["read"]["createSignedTransaction"]>[0][1];
+  type EvmTx = Parameters<TestEVMTxBuilderContract["read"]["buildUnsignedEip1559Tx"]>[0][0];
+  type Signature = Parameters<TestEVMTxBuilderContract["read"]["buildSignedEip1559Tx"]>[0][1];
 
   async function buildSharedTxInput(
     to: Address,
@@ -118,8 +118,10 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
   async function processContractTx(input: SharedTxInput, helperContract: TestEVMTxBuilderContract) {
     const contractEvmTx = toContractEvmTx(input);
 
-    const hashContract: Hex = await helperContract.read.serializeAndHashEvmTx([contractEvmTx]);
-    const serializedContract: Hex = await helperContract.read.createUnsignedTransaction([
+    const hashContract: Hex = await helperContract.read.computeUnsignedEip1559TxHash([
+      contractEvmTx,
+    ]);
+    const serializedContract: Hex = await helperContract.read.buildUnsignedEip1559Tx([
       contractEvmTx,
     ]);
     const signature: Signature = (function () {
@@ -135,7 +137,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
         s,
       };
     })();
-    const signedContract: Hex = await helperContract.read.createSignedTransaction([
+    const signedContract: Hex = await helperContract.read.buildSignedEip1559Tx([
       contractEvmTx,
       signature,
     ]);
@@ -145,7 +147,7 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
   async function deployContracts() {
     const helperContract = await viem.deployContract(
       "contracts/utils/TestEVMTxBuilder.sol:TestEVMTxBuilder",
-      [],
+      ["0x0000000000000000000000000000000000000000" as Address],
     );
 
     const erc20 = await viem.deployContract("contracts/mocks/TestERC20.sol:TestERC20");
@@ -242,16 +244,12 @@ void describe("EVMTxBuilder Comparison with Viem", async function () {
 
       const transferAmount = parseEther("10");
 
-      // Encode the input data using contract
-      // const transferData = encodeFunctionData({
-      //   abi: ERC20_ABI,
-      //   functionName: "transfer",
-      //   args: [RECIPIENT, transferAmount],
-      // });
-      const transferData = await helperContract.read.encodeErc20TransferInput([
-        RECIPIENT,
-        transferAmount,
-      ]);
+      // Encode the input data using viem
+      const transferData = encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: "transfer",
+        args: [RECIPIENT, transferAmount],
+      });
 
       const signedEVMTx = await buildAndSignTransaction(helperContract, erc20Address, transferData);
 
