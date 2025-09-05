@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { chainAdapters, contracts as chainSigContracts } from "signet.js";
 import { describe, it, before } from "node:test";
 import { network } from "hardhat";
 import "@nomicfoundation/hardhat-toolbox-viem";
-import { parseUnits, type Address } from "viem";
+import { encodeFunctionData, Hex, parseUnits, type Address } from "viem";
 import type { ContractReturnType } from "@nomicfoundation/hardhat-viem/types";
 import { getContracts, deployOrGetTestContract } from "./setup/contracts.js";
 
@@ -38,6 +39,22 @@ void describe("ERC20 Transfer Signature Request - Sepolia Integration", async fu
       const recipient: Address = "0x4174678c78fEaFd778c1ff319D5D326701449b25";
       const amount = parseUnits("1", 18);
 
+      const contract = new chainSigContracts.evm.ChainSignatureContract({
+        publicClient: publicClient,
+        walletClient: walletClient,
+        contractAddress: contracts.signerAddress,
+      });
+
+      const evmChain = new chainAdapters.evm.EVM({
+        publicClient,
+        contract,
+      });
+
+      const { address } = await evmChain.deriveAddressAndPublicKey(
+        contracts.signerAddress,
+        DERIVATION_PATH,
+      );
+
       const [nonce, feeData] = await Promise.all([
         publicClient.getTransactionCount({
           address: walletClient.account.address,
@@ -65,6 +82,40 @@ void describe("ERC20 Transfer Signature Request - Sepolia Integration", async fu
           value: SIGNATURE_DEPOSIT, // Send ETH for signature payment
         },
       );
+
+      const erc20Abi = await viem.getContractAt("erc20", contracts.tokenAddress);
+
+      const data = encodeFunctionData({
+        abi: erc20Abi.abi,
+        functionName: "transfer",
+        args: [recipient, amount],
+      });
+
+      const { hashesToSign } = await evmChain.prepareTransactionForSigning({
+        from: address as Hex,
+        to: contracts.signerAddress,
+        nonce,
+        value: 0n,
+        data: data,
+        gas: DEFAULT_GAS_LIMIT,
+        maxFeePerGas: feeData.maxFeePerGas ?? 20000000000n, // fallback to 20 gwei
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? 1000000000n, // fallback to 1 gwei
+      });
+
+      const requestId = contract.getRequestId(
+        {
+          payload: hashesToSign[0],
+          path: DERIVATION_PATH,
+          key_version: KEY_VERSION,
+        },
+        {
+          algo: SIGNING_ALGORITHM,
+          dest: RESPONSE_DESTINATION,
+          params: ADDITIONAL_PARAMS,
+        },
+      );
+
+      console.log("⏳ Request ID:", requestId);
 
       console.log("⏳ Transaction hash:", txHash);
 
