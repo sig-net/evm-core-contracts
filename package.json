@@ -1,19 +1,46 @@
 {
-  "name": "hardhat-project",
-  "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
-    "bitcoinjs-lib": "^6.1.7",
-    "bitcore-lib": "^10.8.0",
-    "hardhat": "^2.22.19",
-    "secp256k1": "link:@noble/curves/secp256k1"
+  "name": "tmp",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test:unit": "hardhat test",
+    "test:integration": "hardhat test test-integration/requestSignature.integration.ts --network sepolia",
+    "deploy:sepolia": "hardhat ignition deploy ignition/modules/TestEVMTxBuilder.ts --network sepolia",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "packageManager": "pnpm@10.5.2+sha512.da9dc28cd3ff40d0592188235ab25d3202add8a207afbedc682220e4a0029ffbff4562102b9e6e46b4e3f9e8bd53e6d05de48544b0c57d4b0179e22c76d1199b",
+  "devDependencies": {
+    "@eth-optimism/contracts": "^0.6.0",
+    "@noble/curves": "^2.0.0",
+    "@nomicfoundation/hardhat-ignition": "^3.0.2",
+    "@nomicfoundation/hardhat-network-helpers": "^3",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^3.0.1",
+    "@nomicfoundation/hardhat-viem": "^3.0.0",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@types/node": "^22.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.42.0",
+    "@typescript-eslint/parser": "^8.42.0",
+    "dotenv": "^17.2.2",
+    "eslint": "^9.34.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "hardhat": "^3.0.4",
+    "prettier": "^3.6.2",
+    "typescript": "~5.8.0",
+    "viem": "^2.37.2"
+  },
+  "packageManager": "pnpm@10.15.0+sha512.486ebc259d3e999a4e8691ce03b5cac4a71cbeca39372a9b762cb500cfdf0873e2cb16abe3d951b1ee2cf012503f027b98b6584e4df22524e0c7450d9ec7aa7b",
   "dependencies": {
-    "@noble/secp256k1": "^2.2.3",
-    "@openzeppelin/contracts": "^5.2.0",
-    "bitcoin-core": "^5.0.0",
-    "bn.js": "^5.2.1",
-    "ecpair": "^3.0.0",
-    "tiny-secp256k1": "^2.2.3"
+    "signet.js": "0.0.12-beta.11"
+  },
+  "pnpm": {
+    "overrides": {
+      "lru_map": "0.3.3"
+    }
   }
 }
