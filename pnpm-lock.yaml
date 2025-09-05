@@ -12,8 +12,8 @@ importers:
   .:
     dependencies:
       signet.js:
-        specifier: ^0.0.12-beta.9
-        version: 0.0.12(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+        specifier: 0.0.12-beta.11
+        version: 0.0.12-beta.11(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76)
     devDependencies:
       '@eth-optimism/contracts':
         specifier: ^0.6.0
@@ -1818,8 +1818,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  signet.js@0.0.12:
-    resolution: {integrity: sha512-19mdYrDx+XjyshMn/JkUOef0TcDQBoVpRvKmNVvT+xnxMCiZ0ejA8i52be0rBdISNIMLhGJQEocm2orzzHqpBw==}
+  signet.js@0.0.12-beta.11:
+    resolution: {integrity: sha512-cDHfnZXaXSnsumb9uhXYRWReDrSQgB8bD1qVPhuoyhEaHZgN614/+jSXRLsq++C90SrkZrZ3tH3Al0NvNpfSDg==}
 
   sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
@@ -4135,7 +4135,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  signet.js@0.0.12(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76):
+  signet.js@0.0.12-beta.11(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)(zod@3.25.76):
     dependencies:
       '@coral-xyz/anchor': 0.31.1(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@cosmjs/amino': 0.32.4

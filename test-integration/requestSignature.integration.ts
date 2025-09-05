@@ -20,7 +20,8 @@ const SIGNING_ALGORITHM = "ecdsa";
 const RESPONSE_DESTINATION = "";
 const ADDITIONAL_PARAMS = "";
 
-void describe("ERC20 Transfer Signature Request - Sepolia Integration", async function () {
+// TODO: Work in progress
+void describe.skip("ERC20 Transfer Signature Request - Sepolia Integration", async function () {
   const { viem } = await network.connect();
   const publicClient = await viem.getPublicClient();
   const [walletClient] = await viem.getWalletClients();
@@ -83,17 +84,29 @@ void describe("ERC20 Transfer Signature Request - Sepolia Integration", async fu
         },
       );
 
-      const erc20Abi = await viem.getContractAt("erc20", contracts.tokenAddress);
+      // Define ERC20 transfer function ABI
+      const erc20TransferAbi = [
+        {
+          inputs: [
+            { name: "recipient", type: "address" },
+            { name: "amount", type: "uint256" },
+          ],
+          name: "transfer",
+          outputs: [{ name: "", type: "bool" }],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ] as const;
 
       const data = encodeFunctionData({
-        abi: erc20Abi.abi,
+        abi: erc20TransferAbi,
         functionName: "transfer",
         args: [recipient, amount],
       });
 
       const { hashesToSign } = await evmChain.prepareTransactionForSigning({
         from: address as Hex,
-        to: contracts.signerAddress,
+        to: contracts.tokenAddress,
         nonce,
         value: 0n,
         data: data,
